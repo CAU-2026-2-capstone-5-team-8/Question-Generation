@@ -4,7 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from question_generation.cli import app
-from question_generation.config import load_settings
+from question_generation.config import DEFAULT_MODEL, load_settings
 from question_generation.errors import GenerationConfigurationError
 from question_generation.generation import FakeQuestionGenerator, generate_question
 from question_generation.schemas import (
@@ -58,6 +58,14 @@ def test_missing_key_has_clear_error(monkeypatch) -> None:
         assert "GEMINI_API_KEY" in str(exc)
     else:
         raise AssertionError("missing key must fail")
+
+
+def test_default_model_is_current_flash_lite(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("QUESTION_GENERATION_MODEL", raising=False)
+    settings = load_settings(require_api_key=True)
+    assert DEFAULT_MODEL == "gemini-3.5-flash-lite"
+    assert settings.model == DEFAULT_MODEL
 
 
 def test_cli_dry_run_needs_no_key(

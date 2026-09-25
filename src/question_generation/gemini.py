@@ -43,7 +43,7 @@ class GeminiQuestionGenerator:
                     seed=self.settings.seed,
                     max_output_tokens=self.settings.max_output_tokens,
                     response_mime_type="application/json",
-                    response_schema=ProviderQuestion,
+                    response_json_schema=ProviderQuestion.model_json_schema(),
                 ),
             )
         except ValidationError as exc:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from question_generation.errors import GenerationConfigurationError
 
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 PROMPT_VERSION = "question-generation-prompt-v1"
 GENERATION_CONFIG_VERSION = "gemini-generation-config-v1"
 GENERATED_QUESTION_VERSION = "generated-question-v1"

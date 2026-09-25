@@ -45,7 +45,7 @@ source the file in your shell.
 
 ```text
 GEMINI_API_KEY=                 # required only for a live generate call
-QUESTION_GENERATION_MODEL=gemini-2.5-flash-lite
+QUESTION_GENERATION_MODEL=gemini-3.5-flash-lite
 ```
 
 The default model is centralized in `question_generation.config`. A model override changes only
@@ -84,13 +84,13 @@ It includes evidence identifiers and summaries, but no raw book prose.
 
 The production adapter uses `google.genai.Client.models.generate_content` with:
 
-- Pydantic `ProviderQuestion` as `response_schema`
+- `ProviderQuestion.model_json_schema()` as `response_json_schema`
 - `application/json` response MIME type
 - `temperature=0` and `seed=0`
 - one request per `QuestionSpec`
 - `response.parsed` only; there is no regex or raw-JSON fallback
 
-This follows Google's official [Pydantic structured-output
+This follows Google's official [JSON Schema structured-output
 pattern](https://googleapis.github.io/python-genai/#json-response-schema). The prompt does not repeat
 the JSON schema. The pipeline is:
 

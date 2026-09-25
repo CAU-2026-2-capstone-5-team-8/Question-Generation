@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from question_generation.config import GenerationSettings
 from question_generation.errors import (
@@ -105,7 +106,7 @@ class FakeModels:
         return self.response
 
 
-def test_gemini_uses_pydantic_structured_output_and_sdk_usage(
+def test_gemini_uses_json_schema_structured_output_and_sdk_usage(
     vocabulary_output: ProviderQuestion,
 ) -> None:
     response = SimpleNamespace(
@@ -126,8 +127,19 @@ def test_gemini_uses_pydantic_structured_output_and_sdk_usage(
     assert result.usage == TokenUsage(input_tokens=120, output_tokens=45, total_tokens=165)
     config = models.calls[0]["config"]
     assert config.response_mime_type == "application/json"
-    assert config.response_schema is ProviderQuestion
+    assert config.response_schema is None
+    assert config.response_json_schema == ProviderQuestion.model_json_schema()
     assert models.calls[0]["model"] == "gemini-test"
+
+
+def test_provider_question_still_rejects_extra_fields(
+    vocabulary_output: ProviderQuestion,
+) -> None:
+    payload = vocabulary_output.model_dump()
+    payload["unexpected"] = "not allowed"
+
+    with pytest.raises(ValidationError):
+        ProviderQuestion.model_validate(payload)
 
 
 def test_gemini_rejects_malformed_parsed_output() -> None:
