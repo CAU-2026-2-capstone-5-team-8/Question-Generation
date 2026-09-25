@@ -28,6 +28,26 @@ def test_prompt_is_versioned_minimal_and_preserves_target(vocabulary_spec: Quest
     assert "response_schema" not in rendered
 
 
+def test_provider_response_schema_has_no_numeric_literal_const() -> None:
+    schema = ProviderQuestion.model_json_schema()
+    target_schema = schema["properties"]["target_difficulty"]
+    assert target_schema["type"] == "integer"
+    assert target_schema["minimum"] == 1
+    assert target_schema["maximum"] == 3
+    assert "const" not in target_schema
+
+    def numeric_consts(value: object) -> list[int | float]:
+        if isinstance(value, dict):
+            found = []
+            if isinstance(value.get("const"), int | float):
+                found.append(value["const"])
+            return found + [item for child in value.values() for item in numeric_consts(child)]
+        if isinstance(value, list):
+            return [item for child in value for item in numeric_consts(child)]
+        return []
+
+    assert numeric_consts(schema) == []
+
 def test_fake_generation_preserves_provenance_and_is_deterministic(
     vocabulary_spec: QuestionSpec, vocabulary_output: ProviderQuestion
 ) -> None:

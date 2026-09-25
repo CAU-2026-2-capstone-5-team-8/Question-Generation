@@ -180,7 +180,7 @@ class ProviderQuestion(StrictModel):
     cognitive_operation: Literal["recognize", "recall"]
     primary_concept: str
     related_concepts: list[str]
-    target_difficulty: Literal[1]
+    target_difficulty: int = Field(ge=1, le=3)
     stem: str
     choices: list[str] = Field(min_length=4, max_length=4)
     correct_choice_index: int = Field(ge=0, le=3)
