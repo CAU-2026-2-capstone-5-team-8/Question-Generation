@@ -2,12 +2,13 @@
 
 import json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Annotated
 
 import typer
 
 from question_generation.config import load_settings
-from question_generation.errors import QuestionGenerationError
+from question_generation.errors import InputContractError, QuestionGenerationError
 from question_generation.gemini import GeminiQuestionGenerator
 from question_generation.generation import generate_question
 from question_generation.input_adapter import LoadedQuestionSpec, load_question_spec
@@ -40,6 +41,28 @@ def _load_input(
 def _fail(exc: Exception) -> None:
     typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
     raise typer.Exit(code=1) from exc
+
+
+def _write_json_atomic(output: Path, content: str) -> None:
+    """Write a complete JSON artifact before atomically replacing the destination."""
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output.parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(content)
+        temporary_path.replace(output)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 @app.command("render-prompt")
@@ -80,8 +103,8 @@ def generate(
     try:
         loaded = _load_input(blueprint, spec, question_id)
         validate_supported_spec(loaded.spec)
-        settings = load_settings(require_api_key=not dry_run)
         if dry_run:
+            settings = load_settings(require_api_key=False)
             typer.echo(
                 build_prompt(
                     loaded.spec,
@@ -91,6 +114,10 @@ def generate(
             return
         if output is None:
             raise typer.BadParameter("--output is required unless --dry-run is used")
+        resolved_output = output.resolve()
+        if resolved_output == loaded.artifact_path:
+            raise InputContractError("output path must differ from the input artifact path")
+        settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
         question = generate_question(
             loaded.spec,
@@ -98,16 +125,15 @@ def generate(
             generator=generator,
             output_language=settings.output_language,
         )
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
+        _write_json_atomic(
+            resolved_output,
             json.dumps(question.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         typer.secho("Generated and validated one question.", fg=typer.colors.GREEN)
         typer.echo(f"ID: {question.generated_question_id}")
         typer.echo(f"Target: {question.question_type} / {question.primary_concept}")
         typer.echo(f"Model: {question.generation_model}")
-        typer.echo(f"Output: {output.resolve()}")
+        typer.echo(f"Output: {resolved_output}")
         if question.usage.input_tokens is not None:
             typer.echo(
                 "Tokens: "

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from google.genai import errors
 from pydantic import ValidationError
 
 from question_generation.config import DEFAULT_OUTPUT_LANGUAGE, GenerationSettings
@@ -227,3 +229,37 @@ def test_gemini_error_categories_are_distinct() -> None:
     )
     with pytest.raises(ProviderError):
         failed.generate(PromptPayload(system_instruction="system", contents="contents"))
+
+
+@pytest.mark.parametrize(
+    "transport_error",
+    [
+        httpx.ReadTimeout("read timed out"),
+        httpx.ConnectError("connection failed"),
+    ],
+)
+def test_gemini_classifies_httpx_transport_errors_as_unavailable(
+    transport_error: httpx.TransportError,
+) -> None:
+    generator = GeminiQuestionGenerator(
+        GenerationSettings(api_key="test-key"),
+        client=SimpleNamespace(models=RaisingModels(transport_error)),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="could not be reached"):
+        generator.generate(PromptPayload(system_instruction="system", contents="contents"))
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_gemini_api_transient_status_regression(status: int) -> None:
+    error = errors.APIError(
+        status,
+        {"error": {"code": status, "message": "provider unavailable"}},
+    )
+    generator = GeminiQuestionGenerator(
+        GenerationSettings(api_key="test-key"),
+        client=SimpleNamespace(models=RaisingModels(error)),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match=str(status)):
+        generator.generate(PromptPayload(system_instruction="system", contents="contents"))

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from question_generation.cli import app
@@ -47,6 +48,33 @@ def output_for(spec: QuestionSpec) -> ProviderQuestion:
         choices=choices,
         correct_choice_index=0,
         explanation=explanation,
+    )
+
+
+def write_blueprint(path: Path, spec: QuestionSpec) -> None:
+    digest = "sha256:" + "a" * 64
+    path.write_text(
+        json.dumps(
+            {
+                "topic_id": spec.topic_id,
+                "question_specs": [spec.model_dump(mode="json")],
+                "blueprint_version": "assessment-blueprint-v1",
+                "config_version": spec.config_version,
+                "config_hash": spec.config_hash,
+                "canonical_file_hashes": {
+                    name: digest
+                    for name in (
+                        "books.jsonl",
+                        "documents.jsonl",
+                        "toc.jsonl",
+                        "sources.jsonl",
+                    )
+                },
+                "book_profiles_hash": digest,
+                "concept_pool": {"ignored_by_question_generation": True},
+            }
+        ),
+        encoding="utf-8",
     )
 
 
@@ -103,6 +131,98 @@ def test_cli_generate_without_key_fails_before_provider(
     )
     assert result.exit_code == 1
     assert "GEMINI_API_KEY" in result.output
+
+
+@pytest.mark.parametrize("output_style", ["same", "relative", "symlink"])
+def test_cli_rejects_spec_output_collision_before_provider(
+    tmp_path: Path,
+    monkeypatch,
+    vocabulary_spec: QuestionSpec,
+    output_style: str,
+) -> None:
+    spec_path = tmp_path / "input.json"
+    write_spec(spec_path, vocabulary_spec)
+    original = spec_path.read_bytes()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def unexpected_generator(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider must not be constructed for a path collision")
+
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", unexpected_generator)
+    if output_style == "same":
+        output = str(spec_path)
+    elif output_style == "relative":
+        output = "./input.json"
+    else:
+        link = tmp_path / "input-link.json"
+        link.symlink_to(spec_path)
+        output = str(link)
+
+    result = CliRunner().invoke(
+        app,
+        ["generate", "--spec", str(spec_path), "--output", output],
+    )
+
+    assert result.exit_code == 1
+    assert "output path must differ from the input artifact path" in result.output
+    assert spec_path.read_bytes() == original
+
+
+def test_cli_rejects_blueprint_output_collision_before_provider(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    blueprint_path = tmp_path / "blueprint.json"
+    write_blueprint(blueprint_path, vocabulary_spec)
+    original = blueprint_path.read_bytes()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def unexpected_generator(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider must not be constructed for a path collision")
+
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", unexpected_generator)
+    result = CliRunner().invoke(
+        app,
+        [
+            "generate",
+            "--blueprint",
+            str(blueprint_path),
+            "--question-id",
+            vocabulary_spec.question_id,
+            "--output",
+            str(blueprint_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "output path must differ from the input artifact path" in result.output
+    assert blueprint_path.read_bytes() == original
+
+
+def test_cli_writes_distinct_output_atomically(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    spec_path = tmp_path / "input.json"
+    output_path = tmp_path / "generated" / "question.json"
+    write_spec(spec_path, vocabulary_spec)
+    fake = FakeQuestionGenerator(output_for(vocabulary_spec))
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "question_generation.cli.GeminiQuestionGenerator",
+        lambda settings: fake,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["generate", "--spec", str(spec_path), "--output", str(output_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(output_path.read_text(encoding="utf-8"))["question_spec_id"] == (
+        vocabulary_spec.question_id
+    )
+    assert len(fake.prompts) == 1
+    assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []
 
 
 def test_real_ml_fixture_generates_both_supported_types(fixture_bundle: FixtureBundle) -> None:

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import httpx
 from google import genai
 from google.genai import errors, types
 from pydantic import ValidationError
@@ -61,7 +62,7 @@ class GeminiQuestionGenerator:
                     f"Gemini is temporarily unavailable ({status})"
                 ) from exc
             raise ProviderError(f"Gemini request failed ({status or 'unknown status'})") from exc
-        except (TimeoutError, ConnectionError, OSError) as exc:
+        except (TimeoutError, ConnectionError, OSError, httpx.TransportError) as exc:
             raise ProviderUnavailableError("Gemini could not be reached") from exc
         except Exception as exc:  # SDK transport errors are not a stable public hierarchy.
             raise ProviderError(f"unexpected Gemini SDK failure: {type(exc).__name__}") from exc
