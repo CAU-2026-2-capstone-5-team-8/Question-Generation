@@ -48,6 +48,7 @@ def test_provider_response_schema_has_no_numeric_literal_const() -> None:
 
     assert numeric_consts(schema) == []
 
+
 def test_fake_generation_preserves_provenance_and_is_deterministic(
     vocabulary_spec: QuestionSpec, vocabulary_output: ProviderQuestion
 ) -> None:
