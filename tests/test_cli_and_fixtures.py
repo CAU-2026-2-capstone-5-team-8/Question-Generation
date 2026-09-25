@@ -225,6 +225,34 @@ def test_cli_writes_distinct_output_atomically(
     assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []
 
 
+def test_cli_reports_atomic_output_write_failure(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    spec_path = tmp_path / "input.json"
+    output_path = tmp_path / "generated.json"
+    write_spec(spec_path, vocabulary_spec)
+    fake = FakeQuestionGenerator(output_for(vocabulary_spec))
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "question_generation.cli.GeminiQuestionGenerator",
+        lambda settings: fake,
+    )
+
+    def failed_write(output: Path, content: str) -> None:
+        raise OSError("sensitive filesystem detail")
+
+    monkeypatch.setattr("question_generation.cli._write_json_atomic", failed_write)
+    result = CliRunner().invoke(
+        app,
+        ["generate", "--spec", str(spec_path), "--output", str(output_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "could not write generated question output" in result.output
+    assert "sensitive filesystem detail" not in result.output
+    assert not output_path.exists()
+
+
 def test_real_ml_fixture_generates_both_supported_types(fixture_bundle: FixtureBundle) -> None:
     assert {item.question_type for item in fixture_bundle.question_specs} == {
         "vocabulary",

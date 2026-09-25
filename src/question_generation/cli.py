@@ -125,10 +125,13 @@ def generate(
             generator=generator,
             output_language=settings.output_language,
         )
-        _write_json_atomic(
-            resolved_output,
-            json.dumps(question.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
-        )
+        try:
+            _write_json_atomic(
+                resolved_output,
+                json.dumps(question.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
+            )
+        except OSError as exc:
+            raise InputContractError("could not write generated question output") from exc
         typer.secho("Generated and validated one question.", fg=typer.colors.GREEN)
         typer.echo(f"ID: {question.generated_question_id}")
         typer.echo(f"Target: {question.question_type} / {question.primary_concept}")
