@@ -1,0 +1,125 @@
+{
+  "fixture_version": "ml-question-spec-fixture-v1",
+  "source_repository": "CAU-2026-2-capstone-5-team-8/ML",
+  "source_commit": "e3adc460121b1e04d98728fc56eb657cf56a7be2",
+  "source_artifact": "data/output/operating_systems_assessment_blueprint.json",
+  "source_artifact_hash": "sha256:3822916d24b155b50ee3efb2581b43aa5587926eb36b3f7e958bb1f740d47f9c",
+  "question_specs": [
+    {
+      "abstraction_level": null,
+      "assessment_priority": 1.0,
+      "cognitive_operation": "recognize",
+      "concept_role": "covered",
+      "config_hash": "sha256:6d84f2b91dc1d8b6bd55d047ee51fc87d7ff1b1842a5a60fbcc1fde1712b7015",
+      "config_version": "assessment-config-v1",
+      "difficulty_rationale": "Level 1: identify the primary term directly, without a relation step.",
+      "difficulty_version": "question-difficulty-v1",
+      "evidence_summary": "covered concept in 5/5 topic books; evidence types: description, introduction, preface, sample_chapter, toc",
+      "multi_step_required": false,
+      "prerequisite_concepts": [],
+      "prerequisite_depth": null,
+      "primary_concept": "process",
+      "primary_concept_count": 1,
+      "question_id": "q_6b2414f8ad5225c1aef7",
+      "question_spec_version": "question-spec-v1",
+      "question_type": "vocabulary",
+      "related_concept_count": 0,
+      "related_concepts": [],
+      "relation_candidate_source": null,
+      "relationship_reasoning_required": false,
+      "source_document_ids": [],
+      "source_text_complexity": null,
+      "supporting_book_ids": [
+        "book_21ac29d979effd89fad2",
+        "book_28fad378fb6e900626f2",
+        "book_7d22aef622717f0ad24b",
+        "isbn13:9780130319999",
+        "isbn13:9781985086593"
+      ],
+      "supporting_evidence": [
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "doc_9aa92dacdaed0c9c738c",
+          "evidence_type": "sample_chapter",
+          "mention_count": 66
+        },
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "toc_00954f9fac11368bd35d",
+          "evidence_type": "toc",
+          "mention_count": 1
+        },
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "toc_85701d19d3dfd27fea12",
+          "evidence_type": "toc",
+          "mention_count": 1
+        },
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "toc_af95ed45a3159362efc3",
+          "evidence_type": "toc",
+          "mention_count": 1
+        },
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "toc_e11e41de8f8892b535c3",
+          "evidence_type": "toc",
+          "mention_count": 1
+        },
+        {
+          "book_id": "book_21ac29d979effd89fad2",
+          "concept_id": "process",
+          "evidence_id": "toc_e407fe92264272e6441c",
+          "evidence_type": "toc",
+          "mention_count": 1
+        }
+      ],
+      "target_difficulty": 1,
+      "topic_id": "operating-systems"
+    },
+    {
+      "abstraction_level": null,
+      "assessment_priority": 0.5149999999999999,
+      "cognitive_operation": "recall",
+      "concept_role": "prerequisite",
+      "config_hash": "sha256:6d84f2b91dc1d8b6bd55d047ee51fc87d7ff1b1842a5a60fbcc1fde1712b7015",
+      "config_version": "assessment-config-v1",
+      "difficulty_rationale": "Level 1: recall the inferred prerequisite directly, without a relation step.",
+      "difficulty_version": "question-difficulty-v1",
+      "evidence_summary": "prerequisite concept in 1/5 topic books; evidence types: introduction; inferred prerequisite methods: explicit_and_early_prose_proxy",
+      "multi_step_required": false,
+      "prerequisite_concepts": ["programming"],
+      "prerequisite_depth": null,
+      "primary_concept": "programming",
+      "primary_concept_count": 1,
+      "question_id": "q_d2e9c3e6ca7f1ac805a4",
+      "question_spec_version": "question-spec-v1",
+      "question_type": "background_knowledge",
+      "related_concept_count": 0,
+      "related_concepts": [],
+      "relation_candidate_source": null,
+      "relationship_reasoning_required": false,
+      "source_document_ids": [],
+      "source_text_complexity": null,
+      "supporting_book_ids": ["isbn13:9781985086593"],
+      "supporting_evidence": [
+        {
+          "book_id": "isbn13:9781985086593",
+          "concept_id": "programming",
+          "evidence_id": "doc_b1b65cb102f21471920e",
+          "evidence_type": "introduction",
+          "mention_count": 1
+        }
+      ],
+      "target_difficulty": 1,
+      "topic_id": "operating-systems"
+    }
+  ],
+  "notes": "Minimized to one supported v1 example per type; no raw book prose is included."
+}

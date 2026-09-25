@@ -1,0 +1,40 @@
+[project]
+name = "bookmatch-question-generation"
+version = "0.1.0"
+description = "Structured Gemini question generation from BookMatch ML QuestionSpec artifacts"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.0,<2",
+    "pydantic>=2.11,<3",
+    "typer>=0.16,<1",
+]
+
+[project.scripts]
+bookmatch-question-generation = "question_generation.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9",
+    "ruff>=0.12,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/question_generation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: opt-in tests that call the Gemini API",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
