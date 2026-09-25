@@ -222,6 +222,7 @@ class GeneratedQuestion(StrictModel):
     correct_choice_index: int = Field(ge=0, le=3)
     explanation: str
     generation_model: str
+    output_language: str
     prompt_version: str
     generation_config_version: str
     question_spec_version: str
@@ -242,6 +243,7 @@ class GeneratedQuestion(StrictModel):
         "stem",
         "explanation",
         "generation_model",
+        "output_language",
         "prompt_version",
         "generation_config_version",
         "question_spec_version",

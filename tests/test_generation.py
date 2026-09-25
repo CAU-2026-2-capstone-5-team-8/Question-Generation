@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from question_generation.config import GenerationSettings
+from question_generation.config import DEFAULT_OUTPUT_LANGUAGE, GenerationSettings
 from question_generation.errors import (
     GenerationConfigurationError,
     MalformedProviderOutputError,
@@ -19,13 +19,19 @@ from question_generation.schemas import ProviderQuestion, QuestionSpec, TokenUsa
 def test_prompt_is_versioned_minimal_and_preserves_target(vocabulary_spec: QuestionSpec) -> None:
     prompt = build_prompt(vocabulary_spec)
     rendered = prompt.render()
-    assert prompt.prompt_version == "question-generation-prompt-v1"
+    assert prompt.prompt_version == "question-generation-prompt-v2"
+    assert prompt.output_language == DEFAULT_OUTPUT_LANGUAGE
     assert vocabulary_spec.question_id in rendered
     assert vocabulary_spec.primary_concept in rendered
     assert vocabulary_spec.difficulty_rationale in rendered
     assert vocabulary_spec.config_hash in rendered
     assert "audit context only" in rendered
     assert "exactly four" in rendered
+    assert "output language is ko-KR" in rendered
+    assert "stem, every choice" in rendered
+    assert "in Korean" in rendered
+    assert "프로세스(process)" in rendered
+    assert "translate or alter identity fields" in rendered
     assert "response_schema" not in rendered
 
 
@@ -73,6 +79,10 @@ def test_fake_generation_preserves_provenance_and_is_deterministic(
     assert first.supporting_evidence_ids == [
         item.evidence_id for item in vocabulary_spec.supporting_evidence
     ]
+    assert first.output_language == "ko-KR"
+    assert first.prompt_version == "question-generation-prompt-v2"
+    assert first.generation_config_version == "gemini-generation-config-v2"
+    assert first.generated_question_version == "generated-question-v2"
     assert first.usage == usage
     assert len(fake.prompts) == 1
 
@@ -94,6 +104,27 @@ def test_output_change_changes_deterministic_id(
         generator=FakeQuestionGenerator(changed_output),
     )
     assert first.generated_question_id != second.generated_question_id
+
+
+def test_output_language_is_preserved_and_changes_deterministic_id(
+    vocabulary_spec: QuestionSpec,
+    vocabulary_output: ProviderQuestion,
+) -> None:
+    korean = generate_question(
+        vocabulary_spec,
+        artifact_hash="sha256:" + "a" * 64,
+        generator=FakeQuestionGenerator(vocabulary_output),
+    )
+    english = generate_question(
+        vocabulary_spec,
+        artifact_hash="sha256:" + "a" * 64,
+        generator=FakeQuestionGenerator(vocabulary_output),
+        output_language="en-US",
+    )
+
+    assert korean.output_language == "ko-KR"
+    assert english.output_language == "en-US"
+    assert korean.generated_question_id != english.generated_question_id
 
 
 class FakeModels:
@@ -150,6 +181,25 @@ def test_gemini_rejects_malformed_parsed_output() -> None:
     )
     with pytest.raises(MalformedProviderOutputError):
         generator.generate(PromptPayload(system_instruction="system", contents="contents"))
+
+
+def test_gemini_rejects_prompt_language_config_mismatch() -> None:
+    client = SimpleNamespace(models=FakeModels(SimpleNamespace()))
+    generator = GeminiQuestionGenerator(
+        GenerationSettings(api_key="test-key", output_language="ko-KR"),
+        client=client,
+    )
+
+    with pytest.raises(GenerationConfigurationError, match="output_language"):
+        generator.generate(
+            PromptPayload(
+                system_instruction="system",
+                contents="contents",
+                output_language="en-US",
+            )
+        )
+
+    assert client.models.calls == []
 
 
 class RaisingModels:

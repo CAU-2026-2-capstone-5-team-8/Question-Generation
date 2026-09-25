@@ -4,7 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from question_generation.cli import app
-from question_generation.config import DEFAULT_MODEL, load_settings
+from question_generation.config import DEFAULT_MODEL, DEFAULT_OUTPUT_LANGUAGE, load_settings
 from question_generation.errors import GenerationConfigurationError
 from question_generation.generation import FakeQuestionGenerator, generate_question
 from question_generation.schemas import (
@@ -68,6 +68,16 @@ def test_default_model_is_current_flash_lite(monkeypatch) -> None:
     assert settings.model == DEFAULT_MODEL
 
 
+def test_default_and_overridden_output_language(monkeypatch) -> None:
+    monkeypatch.delenv("QUESTION_GENERATION_LANGUAGE", raising=False)
+    assert (
+        load_settings(require_api_key=False).output_language == DEFAULT_OUTPUT_LANGUAGE == "ko-KR"
+    )
+
+    monkeypatch.setenv("QUESTION_GENERATION_LANGUAGE", "en-US")
+    assert load_settings(require_api_key=False).output_language == "en-US"
+
+
 def test_cli_dry_run_needs_no_key(
     tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
 ) -> None:
@@ -76,7 +86,8 @@ def test_cli_dry_run_needs_no_key(
     write_spec(spec_path, vocabulary_spec)
     result = CliRunner().invoke(app, ["generate", "--spec", str(spec_path), "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert "question-generation-prompt-v1" in result.output
+    assert "question-generation-prompt-v2" in result.output
+    assert "output language is ko-KR" in result.output
     assert vocabulary_spec.question_id in result.output
 
 
@@ -112,6 +123,7 @@ def test_real_ml_fixture_generates_both_supported_types(fixture_bundle: FixtureB
     assert all(
         item.input_artifact_hash == fixture_bundle.source_artifact_hash for item in generated
     )
+    assert all(item.output_language == "ko-KR" for item in generated)
 
 
 def test_fixture_file_has_documented_source_hash() -> None:

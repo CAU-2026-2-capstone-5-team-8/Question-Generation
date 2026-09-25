@@ -46,10 +46,11 @@ source the file in your shell.
 ```text
 GEMINI_API_KEY=                 # required only for a live generate call
 QUESTION_GENERATION_MODEL=gemini-3.5-flash-lite
+QUESTION_GENERATION_LANGUAGE=ko-KR
 ```
 
-The default model is centralized in `question_generation.config`. A model override changes only
-the provider model; it does not change the versioned prompt or validation contract.
+The default model and output language are centralized in `question_generation.config`. The output
+language defaults to `ko-KR` and can be overridden independently from the provider model.
 
 ## Input contract
 
@@ -104,9 +105,14 @@ unavailable, provider error, malformed structured output, or deterministic valid
 
 ## Prompt and evidence boundary
 
-`question-generation-prompt-v1` sends only the selected target plus compact audit metadata:
+`question-generation-prompt-v2` sends only the selected target plus compact audit metadata:
 concept IDs, difficulty rationale, evidence summary, evidence types/IDs, and supporting book IDs.
 It does not send a whole topic list, taxonomy, or raw book prose.
+
+The configured output language is authoritative. For the default `ko-KR`, the stem, choices, and
+explanation are written in Korean while canonical concept/topic identifiers remain unchanged.
+Natural Korean technical terms are preferred; an English term may appear at first mention or when
+the translation is ambiguous, without mechanically annotating every term.
 
 Evidence metadata proves why ML selected the target; it is not source text. The prompt prohibits
 quotations and book/page/chapter claims because those claims cannot be grounded from identifiers
@@ -153,19 +159,19 @@ provider-reported token counts when present. It never estimates missing token us
 
 ## Output and deterministic ID
 
-`generated-question-v1` contains:
+`generated-question-v2` contains:
 
 - immutable target identity, cognitive operation, prerequisites, difficulty rationale, and evidence
   summary copied from the input spec
 - `stem`, exactly four `choices`, zero-based `correct_choice_index`, and `explanation`
-- `generation_model`, `prompt_version`, and `generation_config_version`
+- `generation_model`, `output_language`, `prompt_version`, and `generation_config_version`
 - input spec version/config version/config hash, supporting book/evidence/document IDs, and the exact
   input artifact hash
 - provider-reported input/output/total token counts, or `null` when unavailable
 
 `generated_question_id` is a deterministic SHA-256-derived ID over the identity, provenance, and
-question output. Gemini does not propose or control it. Provider token usage is excluded because it
-can vary without changing the question.
+question output, including `output_language`. Gemini does not propose or control it. Provider token
+usage is excluded because it can vary without changing the question.
 
 ## Deterministic validation
 
@@ -180,6 +186,8 @@ Generation fails if any of these checks fail:
 - a spec outside the supported v1 boundary
 
 Structured output constrains syntax; these checks enforce cross-field semantics.
+Language quality is intentionally left to human review instead of using brittle character-ratio
+heuristics that could reject valid technical terms.
 
 ## Human review
 

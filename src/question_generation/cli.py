@@ -53,7 +53,13 @@ def render_prompt(
     try:
         loaded = _load_input(blueprint, spec, question_id)
         validate_supported_spec(loaded.spec)
-        typer.echo(build_prompt(loaded.spec).render())
+        settings = load_settings(require_api_key=False)
+        typer.echo(
+            build_prompt(
+                loaded.spec,
+                output_language=settings.output_language,
+            ).render()
+        )
     except (QuestionGenerationError, ValueError) as exc:
         _fail(exc)
 
@@ -74,17 +80,23 @@ def generate(
     try:
         loaded = _load_input(blueprint, spec, question_id)
         validate_supported_spec(loaded.spec)
+        settings = load_settings(require_api_key=not dry_run)
         if dry_run:
-            typer.echo(build_prompt(loaded.spec).render())
+            typer.echo(
+                build_prompt(
+                    loaded.spec,
+                    output_language=settings.output_language,
+                ).render()
+            )
             return
         if output is None:
             raise typer.BadParameter("--output is required unless --dry-run is used")
-        settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
         question = generate_question(
             loaded.spec,
             artifact_hash=loaded.artifact_hash,
             generator=generator,
+            output_language=settings.output_language,
         )
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(

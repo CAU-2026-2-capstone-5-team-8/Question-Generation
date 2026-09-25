@@ -1,9 +1,9 @@
-"""Deterministic, minimal prompt rendering for question-generation-prompt-v1."""
+"""Deterministic, minimal prompt rendering for the versioned generation prompt."""
 
 import json
 from dataclasses import dataclass
 
-from question_generation.config import PROMPT_VERSION
+from question_generation.config import DEFAULT_OUTPUT_LANGUAGE, PROMPT_VERSION
 from question_generation.schemas import QuestionSpec
 
 
@@ -11,6 +11,7 @@ from question_generation.schemas import QuestionSpec
 class PromptPayload:
     system_instruction: str
     contents: str
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE
     prompt_version: str = PROMPT_VERSION
 
     def render(self) -> str:
@@ -22,8 +23,8 @@ class PromptPayload:
 
 SYSTEM_INSTRUCTION = """You author one multiple-choice diagnostic question from an already-selected
 QuestionSpec. The specification is authoritative: do not select another concept, question type,
-operation, or difficulty. Write in clear English. Produce exactly four plausible, mutually distinct
-choices with exactly one correct answer. Do not use answer-length, grammar, absolutes, or
+operation, or difficulty. Produce exactly four plausible, mutually distinct choices with exactly
+one correct answer. Do not use answer-length, grammar, absolutes, or
 meta-language as clues. Do not use TODOs or placeholders. Do not claim that a named book, page,
 chapter, or source says anything. Evidence metadata is audit context only, not citable source text.
 Do not invent quotations, page references, book-specific facts, or unseen prose. For
@@ -33,7 +34,27 @@ concept. The explanation must identify why the correct choice is correct without
 nonexistent source."""
 
 
-def build_prompt(spec: QuestionSpec) -> PromptPayload:
+def _language_policy(output_language: str) -> str:
+    if not output_language or output_language != output_language.strip():
+        raise ValueError("output_language must be nonblank and trimmed")
+    if output_language == "ko-KR":
+        return """The authoritative output language is ko-KR. Write the stem, every choice, and the
+explanation in Korean. Keep canonical concept and topic identifiers exactly as provided; do not
+translate or alter identity fields in the structured response. Use natural Korean translations for
+technical terms. At first mention, or when a translation is ambiguous, you may write a term as
+Korean (English term), for example 프로세스(process). Do not add English to every technical term
+unnecessarily, and do not change the meaning of technical terminology."""
+    return f"""The authoritative output language is {output_language}. Write the stem, every choice,
+and the explanation in the language identified by that locale. Keep canonical concept and topic
+identifiers exactly as provided; do not translate or alter identity fields in the structured
+response. Use natural localized technical terminology without changing its meaning."""
+
+
+def build_prompt(
+    spec: QuestionSpec,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
     """Render only the target and compact audit metadata; never send whole topic/book content."""
 
     audit_context = {
@@ -61,10 +82,15 @@ def build_prompt(spec: QuestionSpec) -> PromptPayload:
         "question_spec_version": spec.question_spec_version,
         "config_version": spec.config_version,
         "config_hash": spec.config_hash,
+        "output_language": output_language,
     }
     contents = (
         "Generate exactly one question for the following authoritative target. "
         "Echo all target identity fields exactly.\n\n"
         + json.dumps(audit_context, ensure_ascii=False, sort_keys=True, indent=2)
     )
-    return PromptPayload(system_instruction=SYSTEM_INSTRUCTION, contents=contents)
+    return PromptPayload(
+        system_instruction=f"{SYSTEM_INSTRUCTION}\n\n{_language_policy(output_language)}",
+        contents=contents,
+        output_language=output_language,
+    )

@@ -33,6 +33,10 @@ class GeminiQuestionGenerator:
         self.client = client or genai.Client(api_key=settings.api_key)
 
     def generate(self, prompt: PromptPayload) -> ProviderGeneration:
+        if prompt.output_language != self.settings.output_language:
+            raise GenerationConfigurationError(
+                "prompt output_language must exactly match GenerationSettings"
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.settings.model,

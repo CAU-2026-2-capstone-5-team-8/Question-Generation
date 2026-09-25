@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from question_generation.config import (
+    DEFAULT_OUTPUT_LANGUAGE,
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
     PROMPT_VERSION,
@@ -62,9 +63,10 @@ def generate_question(
     *,
     artifact_hash: str,
     generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
 ) -> GeneratedQuestion:
     validate_supported_spec(spec)
-    prompt = build_prompt(spec)
+    prompt = build_prompt(spec, output_language=output_language)
     provider = generator.generate(prompt)
     validate_provider_question(provider.output, spec)
 
@@ -86,6 +88,7 @@ def generate_question(
         "correct_choice_index": provider.output.correct_choice_index,
         "explanation": provider.output.explanation,
         "generation_model": provider.model,
+        "output_language": output_language,
         "prompt_version": PROMPT_VERSION,
         "generation_config_version": GENERATION_CONFIG_VERSION,
         "question_spec_version": spec.question_spec_version,
