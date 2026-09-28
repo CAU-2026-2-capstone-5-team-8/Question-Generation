@@ -4,11 +4,13 @@ This repository turns an already-selected, versioned ML `QuestionSpec` into one 
 multiple-choice question. It does **not** select concepts, infer difficulty, rank books, or decide
 what should be assessed.
 
-The v1 boundary is intentionally narrow:
+The production boundary is intentionally narrow:
 
-- supported: Level 1 `vocabulary/recognize` and `background_knowledge/recall`
-- rejected: `comprehension`, prose-grounded questions, `compare`, `relate`, `apply`, `integrate`,
-  `infer`, multi-step reasoning, and arbitrary relation reasoning
+- supported v2: Level 1 `vocabulary/recognize` and `background_knowledge/recall`
+- supported grounded v3: single-source Level 2 `comprehension/apply` with a validated
+  `generation-grounding-v1` artifact
+- rejected: ungrounded comprehension, `compare`, `relate`, `integrate`, `infer`, multi-step
+  reasoning, arbitrary relation reasoning, and all other operation/difficulty combinations
 - output: exactly four choices, one correct answer, an explanation, generation provenance, and
   exact input provenance
 
@@ -70,6 +72,12 @@ The local Pydantic contract preserves and validates:
 The adapter also hashes the exact input artifact bytes. It never imports ML Python modules and never
 chooses a replacement spec.
 
+Grounded comprehension additionally requires an ML `generation-grounding-v1` JSON artifact. Its
+strict local contract binds the exact QuestionSpec hash, blueprint hash, document/book/source IDs,
+document and source hashes, 600–1,800 character passage and passage hash, extraction policy,
+license/rights provenance, and the four canonical dataset hashes. The adapter rejects any mismatch;
+it does not read Data-Pipeline files or resolve source IDs itself.
+
 The committed fixture at `tests/fixtures/ml_question_specs.json` contains one real vocabulary spec
 and one real background-knowledge spec minimized from:
 
@@ -118,6 +126,12 @@ Evidence metadata proves why ML selected the target; it is not source text. The 
 quotations and book/page/chapter claims because those claims cannot be grounded from identifiers
 alone.
 
+For the grounded slice, `question-generation-grounded-prompt-v3` sends exactly the passage selected
+by ML together with its document and passage hashes. The provider must use only that passage, must
+not require external knowledge, and returns only the question sentence. Finalization prepends the
+unchanged source passage to the stem so the assessment user sees `passage + question + choices`.
+No whole chapter, fallback document, summary, source URL, or synthetic prose is sent.
+
 Inspect the exact prompt without an API key or network call:
 
 ```bash
@@ -133,6 +147,15 @@ uv run bookmatch-question-generation generate \
   --blueprint ../ML/data/output/operating_systems_assessment_blueprint.json \
   --question-id q_6b2414f8ad5225c1aef7 \
   --dry-run
+```
+
+Inspect the exact grounded prompt without a key or network call:
+
+```bash
+uv run bookmatch-question-generation render-prompt \
+  --blueprint ../ML/data/output/linear_algebra_assessment_blueprint_reviewed.json \
+  --question-id q_375e5b6bef551015f67c \
+  --grounding ../ML/data/output/linear_algebra_matrix_grounding.json
 ```
 
 ## Generate one question
@@ -152,6 +175,16 @@ From a standalone spec:
 uv run bookmatch-question-generation generate \
   --spec /path/to/question-spec.json \
   --output data/generated/question.json
+```
+
+From a grounded comprehension target:
+
+```bash
+uv run bookmatch-question-generation generate \
+  --blueprint ../ML/data/output/linear_algebra_assessment_blueprint_reviewed.json \
+  --question-id q_375e5b6bef551015f67c \
+  --grounding ../ML/data/output/linear_algebra_matrix_grounding.json \
+  --output data/generated/la-matrix-comprehension.json
 ```
 
 `data/generated/` is ignored. The CLI reports the generated ID, target, model, output path, and
@@ -183,6 +216,9 @@ its revision prompt version and new deterministic ID together with the preserved
 and the documented review workflow. Canonical lineage is deferred until Backend lifecycle needs
 justify a separate schema/version change.
 
+The current revision command remains restricted to the existing v2 Level 1 targets. Grounded v3
+revision requires explicit passage-preservation rules and remains fail closed in this milestone.
+
 ## Output and deterministic ID
 
 `generated-question-v2` contains:
@@ -199,6 +235,12 @@ justify a separate schema/version change.
 question output, including `output_language`. Gemini does not propose or control it. Provider token
 usage is excluded because it can vary without changing the question.
 
+`generated-question-v3` uses the same field names for the single grounded
+`comprehension/apply/Level 2` slice. Its `stem` contains the exact passage followed by the provider's
+question, `source_document_ids` contains exactly one ML-selected document, and
+`input_artifact_hash` identifies the exact grounding artifact (which in turn binds the blueprint and
+canonical dataset). Existing v2 generation, serialization, and deterministic IDs are unchanged.
+
 ## Deterministic validation
 
 Generation fails if any of these checks fail:
@@ -209,7 +251,10 @@ Generation fails if any of these checks fail:
 - answer text copied verbatim into the stem in an obvious answer leak
 - TODOs or placeholders
 - an explanation that names a different choice number or letter as correct
-- a spec outside the supported v1 boundary
+- a spec outside the supported production boundaries
+- a missing, altered, unlicensed, wrong-document, wrong-book, wrong-topic, or wrong-QuestionSpec
+  grounding artifact
+- grounded targets other than single-source `comprehension/apply/Level 2`
 
 Structured output constrains syntax; these checks enforce cross-field semantics.
 Language quality is intentionally left to human review instead of using brittle character-ratio
@@ -257,12 +302,16 @@ is educationally correct. Save any inspected live result only under ignored `liv
 
 ## Non-goals and current limitations
 
-This milestone does not modify or implement Backend, Frontend, Data-Pipeline, ML ranking, concept
-graphs, matchers, adapters, comprehension/RAG, vector databases, web grounding, async queues,
-cloud deployment, or authentication. It contains no topic-specific generation conditionals.
+This milestone does not modify Backend, Frontend, Data-Pipeline, ML ranking, concept graphs,
+matchers, vector databases, web grounding, async queues, cloud deployment, or authentication. It
+contains no topic-specific generation conditionals.
 
-The current generator cannot justify source-specific claims because the `QuestionSpec` carries
-evidence metadata rather than source text. It supports only two Level 1 target shapes. Both are
-rendered as multiple-choice questions with exactly four choices, so `background_knowledge / recall`
-measures cued recognition more closely than pure free recall. The next milestone should define the
-Backend handoff before considering broader question types or open-ended rendering.
+The existing v2 targets still carry evidence metadata rather than source text and cannot justify
+source-specific claims. Grounded v3 is limited to one apply target, one source document, Level 2,
+and a fixed 600–1,800 character passage policy. Integrate/Level 3, multiple-source synthesis, and
+grounded revision remain unsupported. All question types use four choices, so
+`background_knowledge / recall` measures cued recognition more closely than pure free recall.
+
+Backend currently imports only `generated-question-v2`, Level 1 vocabulary/background targets, and
+empty source-document IDs. It therefore rejects grounded v3 by design. Supporting v3 later requires
+an explicit Backend contract update; this repository does not weaken the current importer.

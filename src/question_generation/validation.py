@@ -1,5 +1,7 @@
 """Deterministic support and semantic checks after structured parsing."""
 
+import hashlib
+import json
 import re
 import unicodedata
 
@@ -7,7 +9,7 @@ from question_generation.errors import (
     GeneratedQuestionValidationError,
     UnsupportedQuestionSpecError,
 )
-from question_generation.schemas import ProviderQuestion, QuestionSpec
+from question_generation.schemas import GenerationGrounding, ProviderQuestion, QuestionSpec
 
 _PLACEHOLDER = re.compile(
     r"(?:\bTODO\b|\bTBD\b|\bFIXME\b|\[insert\b|\{\{.+?\}\}|<placeholder>)",
@@ -54,6 +56,79 @@ def validate_supported_spec(spec: QuestionSpec) -> None:
     if spec.source_document_ids:
         raise UnsupportedQuestionSpecError(
             "source-text or prose-grounded targets are not supported"
+        )
+
+
+def validate_grounded_comprehension_spec(spec: QuestionSpec) -> None:
+    """Allow only the first grounded comprehension production slice."""
+
+    if (
+        spec.question_type != "comprehension"
+        or spec.cognitive_operation != "apply"
+        or spec.target_difficulty != 2
+    ):
+        raise UnsupportedQuestionSpecError(
+            "grounded generation supports only comprehension/apply/Level 2"
+        )
+    if (
+        spec.related_concepts
+        or spec.relationship_reasoning_required
+        or spec.multi_step_required
+        or len(spec.source_document_ids) != 1
+    ):
+        raise UnsupportedQuestionSpecError(
+            "grounded generation supports one source and one non-relational concept"
+        )
+
+
+def _question_spec_hash(spec: QuestionSpec) -> str:
+    encoded = json.dumps(
+        spec.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def validate_grounding_for_spec(
+    grounding: GenerationGrounding,
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+) -> None:
+    """Fail closed unless the grounding artifact exactly binds the selected QuestionSpec."""
+
+    validate_grounded_comprehension_spec(spec)
+    expected = {
+        "question_spec_id": spec.question_id,
+        "question_spec_hash": _question_spec_hash(spec),
+        "topic_id": spec.topic_id,
+        "question_type": spec.question_type,
+        "cognitive_operation": spec.cognitive_operation,
+        "target_difficulty": spec.target_difficulty,
+        "primary_concept": spec.primary_concept,
+        "related_concepts": spec.related_concepts,
+        "source_document_id": spec.source_document_ids[0],
+        "blueprint_hash": blueprint_hash,
+    }
+    actual = {name: getattr(grounding, name) for name in expected}
+    mismatches = [name for name in expected if actual[name] != expected[name]]
+    if mismatches:
+        raise UnsupportedQuestionSpecError(
+            "grounding artifact does not match authoritative QuestionSpec: " + ", ".join(mismatches)
+        )
+    if grounding.book_id not in spec.supporting_book_ids:
+        raise UnsupportedQuestionSpecError("grounding book does not match supporting_book_ids")
+    if not any(
+        item.evidence_id == grounding.source_document_id
+        and item.book_id == grounding.book_id
+        and item.concept_id == spec.primary_concept
+        and item.evidence_type == grounding.document_type
+        for item in spec.supporting_evidence
+    ):
+        raise UnsupportedQuestionSpecError(
+            "grounding document lacks matching QuestionSpec concept evidence"
         )
 
 

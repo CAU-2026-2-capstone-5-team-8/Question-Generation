@@ -10,12 +10,23 @@ from pydantic import ValidationError
 
 from question_generation.config import SUPPORTED_QUESTION_SPEC_VERSION
 from question_generation.errors import InputContractError
-from question_generation.schemas import AssessmentBlueprintEnvelope, QuestionSpec
+from question_generation.schemas import (
+    AssessmentBlueprintEnvelope,
+    GenerationGrounding,
+    QuestionSpec,
+)
 
 
 @dataclass(frozen=True)
 class LoadedQuestionSpec:
     spec: QuestionSpec
+    artifact_hash: str
+    artifact_path: Path
+
+
+@dataclass(frozen=True)
+class LoadedGenerationGrounding:
+    grounding: GenerationGrounding
     artifact_hash: str
     artifact_path: Path
 
@@ -66,6 +77,21 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
         )
     return LoadedQuestionSpec(
         spec=spec,
+        artifact_hash=_artifact_hash(content),
+        artifact_path=path.resolve(),
+    )
+
+
+def load_generation_grounding(path: Path) -> LoadedGenerationGrounding:
+    """Load one strict generation-grounding-v1 artifact and hash its exact bytes."""
+
+    payload, content = _read_json(path)
+    try:
+        grounding = GenerationGrounding.model_validate(payload)
+    except ValidationError as exc:
+        raise InputContractError(f"grounding contract validation failed: {exc}") from exc
+    return LoadedGenerationGrounding(
+        grounding=grounding,
         artifact_hash=_artifact_hash(content),
         artifact_path=path.resolve(),
     )

@@ -5,10 +5,11 @@ from dataclasses import dataclass
 
 from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
+    GROUNDED_PROMPT_VERSION,
     PROMPT_VERSION,
     REVISION_PROMPT_VERSION,
 )
-from question_generation.schemas import GeneratedQuestion, QuestionSpec
+from question_generation.schemas import GeneratedQuestion, GenerationGrounding, QuestionSpec
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,18 @@ not a patch or commentary. Address every applicable feedback point while preserv
 concept, question type, cognitive operation, difficulty, and configured output-language policy. Do
 not copy an identified factual, terminology, ambiguity, or wording error into the revision. The
 previous question and feedback are revision context only and are not citable source evidence."""
+
+GROUNDED_SYSTEM_INSTRUCTION = """You author one passage-grounded multiple-choice comprehension
+question from an already-selected QuestionSpec. The QuestionSpec is authoritative: do not change
+the topic, concept, question type, operation, or difficulty. Use only the provided passage as the
+factual basis. A reader must be able to determine the correct answer without external knowledge,
+but the question must require understanding and applying the passage rather than merely locating an
+identical string. Do not invent book, page, chapter, quotation, or source claims. Return only the
+question sentence in stem; do not copy or translate the passage into stem because the application
+will display the exact source passage separately. Produce exactly four plausible, mutually distinct
+choices with exactly one correct answer. Distractors must be plausible in the passage context. Do
+not use answer-length, grammar, absolutes, meta-language, TODOs, or placeholders as clues. The
+explanation must justify the answer from the supplied passage and must not rely on outside facts."""
 
 
 def _language_policy(output_language: str) -> str:
@@ -108,6 +121,40 @@ def build_prompt(
         system_instruction=f"{SYSTEM_INSTRUCTION}\n\n{_language_policy(output_language)}",
         contents=contents,
         output_language=output_language,
+    )
+
+
+def build_grounded_prompt(
+    spec: QuestionSpec,
+    grounding: GenerationGrounding,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render one authoritative target with the exact bounded grounding passage."""
+
+    context = {
+        "authoritative_target": _audit_context(spec, output_language),
+        "grounding": {
+            "grounding_version": grounding.grounding_version,
+            "source_document_id": grounding.source_document_id,
+            "document_content_hash": grounding.document_content_hash,
+            "passage_extraction_policy": grounding.passage_extraction_policy,
+            "passage_hash": grounding.passage_hash,
+            "passage_text": grounding.passage_text,
+        },
+    }
+    contents = (
+        "Generate exactly one question for the authoritative target. Echo all target identity "
+        "fields exactly and ground the answer only in grounding.passage_text.\n\n"
+        + json.dumps(context, ensure_ascii=False, sort_keys=True, indent=2)
+    )
+    return PromptPayload(
+        system_instruction=(
+            f"{GROUNDED_SYSTEM_INSTRUCTION}\n\n{_language_policy(output_language)}"
+        ),
+        contents=contents,
+        output_language=output_language,
+        prompt_version=GROUNDED_PROMPT_VERSION,
     )
 
 
