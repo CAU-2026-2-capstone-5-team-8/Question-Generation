@@ -9,9 +9,9 @@ from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
-    PROMPT_VERSION,
 )
-from question_generation.prompt import PromptPayload, build_prompt
+from question_generation.errors import InputContractError
+from question_generation.prompt import PromptPayload, build_prompt, build_revision_prompt
 from question_generation.schemas import (
     GeneratedQuestion,
     ProviderQuestion,
@@ -67,6 +67,92 @@ def generate_question(
 ) -> GeneratedQuestion:
     validate_supported_spec(spec)
     prompt = build_prompt(spec, output_language=output_language)
+    return _generate_from_prompt(
+        spec,
+        artifact_hash=artifact_hash,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+    )
+
+
+def _validate_revision_source(
+    spec: QuestionSpec,
+    previous: GeneratedQuestion,
+    *,
+    artifact_hash: str,
+    output_language: str,
+) -> None:
+    expected = {
+        "question_spec_id": spec.question_id,
+        "topic_id": spec.topic_id,
+        "question_type": spec.question_type,
+        "cognitive_operation": spec.cognitive_operation,
+        "primary_concept": spec.primary_concept,
+        "related_concepts": spec.related_concepts,
+        "prerequisite_concepts": spec.prerequisite_concepts,
+        "target_difficulty": spec.target_difficulty,
+        "difficulty_rationale": spec.difficulty_rationale,
+        "evidence_summary": spec.evidence_summary,
+        "question_spec_version": spec.question_spec_version,
+        "question_spec_config_version": spec.config_version,
+        "question_spec_config_hash": spec.config_hash,
+        "supporting_book_ids": spec.supporting_book_ids,
+        "supporting_evidence_ids": list(
+            dict.fromkeys(item.evidence_id for item in spec.supporting_evidence)
+        ),
+        "source_document_ids": spec.source_document_ids,
+        "input_artifact_hash": artifact_hash,
+        "output_language": output_language,
+    }
+    mismatches = [name for name, value in expected.items() if getattr(previous, name) != value]
+    if mismatches:
+        raise InputContractError(
+            "previous question does not match revision target: " + ", ".join(mismatches)
+        )
+
+
+def revise_question(
+    spec: QuestionSpec,
+    *,
+    artifact_hash: str,
+    previous: GeneratedQuestion,
+    feedback: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestion:
+    """Generate a validated replacement without changing the authoritative QuestionSpec."""
+
+    validate_supported_spec(spec)
+    _validate_revision_source(
+        spec,
+        previous,
+        artifact_hash=artifact_hash,
+        output_language=output_language,
+    )
+    prompt = build_revision_prompt(
+        spec,
+        previous,
+        feedback,
+        output_language=output_language,
+    )
+    return _generate_from_prompt(
+        spec,
+        artifact_hash=artifact_hash,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+    )
+
+
+def _generate_from_prompt(
+    spec: QuestionSpec,
+    *,
+    artifact_hash: str,
+    generator: QuestionGenerator,
+    prompt: PromptPayload,
+    output_language: str,
+) -> GeneratedQuestion:
     provider = generator.generate(prompt)
     validate_provider_question(provider.output, spec)
 
@@ -89,7 +175,7 @@ def generate_question(
         "explanation": provider.output.explanation,
         "generation_model": provider.model,
         "output_language": output_language,
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": prompt.prompt_version,
         "generation_config_version": GENERATION_CONFIG_VERSION,
         "question_spec_version": spec.question_spec_version,
         "question_spec_config_version": spec.config_version,

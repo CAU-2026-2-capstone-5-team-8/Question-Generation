@@ -8,13 +8,18 @@ from pydantic import ValidationError
 from question_generation.config import DEFAULT_OUTPUT_LANGUAGE, GenerationSettings
 from question_generation.errors import (
     GenerationConfigurationError,
+    InputContractError,
     MalformedProviderOutputError,
     ProviderError,
     ProviderUnavailableError,
 )
 from question_generation.gemini import GeminiQuestionGenerator
-from question_generation.generation import FakeQuestionGenerator, generate_question
-from question_generation.prompt import PromptPayload, build_prompt
+from question_generation.generation import (
+    FakeQuestionGenerator,
+    generate_question,
+    revise_question,
+)
+from question_generation.prompt import PromptPayload, build_prompt, build_revision_prompt
 from question_generation.schemas import ProviderQuestion, QuestionSpec, TokenUsage
 
 
@@ -106,6 +111,97 @@ def test_output_change_changes_deterministic_id(
         generator=FakeQuestionGenerator(changed_output),
     )
     assert first.generated_question_id != second.generated_question_id
+
+
+def test_revision_prompt_is_versioned_and_contains_review_context(
+    vocabulary_spec: QuestionSpec,
+    vocabulary_output: ProviderQuestion,
+) -> None:
+    artifact_hash = "sha256:" + "a" * 64
+    previous = generate_question(
+        vocabulary_spec,
+        artifact_hash=artifact_hash,
+        generator=FakeQuestionGenerator(vocabulary_output),
+    )
+    feedback = "Use the standard Korean term and remove the ambiguous distractor."
+
+    prompt = build_revision_prompt(vocabulary_spec, previous, feedback)
+    rendered = prompt.render()
+
+    assert prompt.prompt_version == "question-generation-revision-prompt-v1"
+    assert previous.generated_question_id in rendered
+    assert feedback in rendered
+    assert vocabulary_spec.question_id in rendered
+    assert "complete replacement question" in rendered
+
+
+def test_revision_preserves_schema_and_provenance_but_gets_a_new_id(
+    vocabulary_spec: QuestionSpec,
+    vocabulary_output: ProviderQuestion,
+) -> None:
+    artifact_hash = "sha256:" + "a" * 64
+    previous = generate_question(
+        vocabulary_spec,
+        artifact_hash=artifact_hash,
+        generator=FakeQuestionGenerator(vocabulary_output),
+    )
+    revised_output = vocabulary_output.model_copy(
+        update={
+            "stem": "Which option gives the standard definition of an operating-system process?",
+            "explanation": "A process is a running program together with its managed state.",
+        }
+    )
+    fake = FakeQuestionGenerator(revised_output)
+
+    revised = revise_question(
+        vocabulary_spec,
+        artifact_hash=artifact_hash,
+        previous=previous,
+        feedback="Clarify the definition without changing the target.",
+        generator=fake,
+    )
+
+    assert revised.question_spec_id == previous.question_spec_id
+    assert revised.input_artifact_hash == previous.input_artifact_hash
+    assert revised.generated_question_version == previous.generated_question_version
+    assert revised.prompt_version == "question-generation-revision-prompt-v1"
+    assert revised.generated_question_id != previous.generated_question_id
+    assert len(fake.prompts) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("question_spec_id", "q_00000000000000000000"),
+        ("topic_id", "different-topic"),
+        ("input_artifact_hash", "sha256:" + "b" * 64),
+        ("output_language", "en-US"),
+    ],
+)
+def test_revision_rejects_mismatched_previous_question(
+    field: str,
+    value: str,
+    vocabulary_spec: QuestionSpec,
+    vocabulary_output: ProviderQuestion,
+) -> None:
+    artifact_hash = "sha256:" + "a" * 64
+    previous = generate_question(
+        vocabulary_spec,
+        artifact_hash=artifact_hash,
+        generator=FakeQuestionGenerator(vocabulary_output),
+    ).model_copy(update={field: value})
+    fake = FakeQuestionGenerator(vocabulary_output)
+
+    with pytest.raises(InputContractError, match=field):
+        revise_question(
+            vocabulary_spec,
+            artifact_hash=artifact_hash,
+            previous=previous,
+            feedback="Clarify the terminology.",
+            generator=fake,
+        )
+
+    assert fake.prompts == []
 
 
 def test_output_language_is_preserved_and_changes_deterministic_id(

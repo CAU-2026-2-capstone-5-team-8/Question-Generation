@@ -157,6 +157,32 @@ uv run bookmatch-question-generation generate \
 `data/generated/` is ignored. The CLI reports the generated ID, target, model, output path, and
 provider-reported token counts when present. It never estimates missing token usage.
 
+## Revise one generated question
+
+Use the revision command when human feedback identifies a concrete problem in an already generated
+question. The original artifact stays unchanged; write the replacement to a new versioned path.
+
+```bash
+uv run bookmatch-question-generation revise \
+  --blueprint /path/to/assessment-blueprint.json \
+  --question-id q_example \
+  --previous data/generated/example.json \
+  --feedback-file data/generated/revision-feedback/example.txt \
+  --output data/generated/example-rev1.json
+```
+
+The command verifies that the previous question belongs to the exact same `QuestionSpec`, input
+artifact, and output language before calling Gemini. It uses
+`question-generation-revision-prompt-v1`, returns the unchanged `GeneratedQuestion` schema, and
+runs the same deterministic validation as first-pass generation. Revision feedback is generation
+input, not a `HumanQuestionReview`; the command does not assign an approval status or write the
+canonical review JSONL.
+
+`GeneratedQuestion` does not currently contain a `revised_from` field. A revision is traceable by
+its revision prompt version and new deterministic ID together with the preserved original artifact
+and the documented review workflow. Canonical lineage is deferred until Backend lifecycle needs
+justify a separate schema/version change.
+
 ## Output and deterministic ID
 
 `generated-question-v2` contains:
@@ -236,6 +262,7 @@ graphs, matchers, adapters, comprehension/RAG, vector databases, web grounding, 
 cloud deployment, or authentication. It contains no topic-specific generation conditionals.
 
 The current generator cannot justify source-specific claims because the `QuestionSpec` carries
-evidence metadata rather than source text. It supports only two Level 1 target shapes. The next
-milestone should gather human review results and define the Backend handoff before considering any
-broader question types.
+evidence metadata rather than source text. It supports only two Level 1 target shapes. Both are
+rendered as multiple-choice questions with exactly four choices, so `background_knowledge / recall`
+measures cued recognition more closely than pure free recall. The next milestone should define the
+Backend handoff before considering broader question types or open-ended rendering.
