@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
     GROUNDED_PROMPT_VERSION,
+    GROUNDED_REVISION_PROMPT_VERSION,
     PROMPT_VERSION,
     REVISION_PROMPT_VERSION,
 )
@@ -56,6 +57,17 @@ will display the exact source passage separately. Produce exactly four plausible
 choices with exactly one correct answer. Distractors must be plausible in the passage context. Do
 not use answer-length, grammar, absolutes, meta-language, TODOs, or placeholders as clues. The
 explanation must justify the answer from the supplied passage and must not rely on outside facts."""
+
+GROUNDED_REVISION_INSTRUCTION = """You revise one previously generated passage-grounded question
+in response to reviewer feedback. Return a complete replacement question, not a patch or
+commentary. Preserve the authoritative QuestionSpec and use only the provided passage as the
+factual basis. Do not modify, rewrite, translate, summarize, or repeat the passage in the returned
+stem. Address every applicable feedback point. The revised question must require applying a rule
+from the passage to a new situation; it must not be answerable by copying an example or matching an
+identical string from the passage. Do not require outside knowledge. Preserve comprehension/apply
+at Level 2. Produce exactly four plausible, mutually distinct choices with exactly one correct
+answer, and explain the answer only from the passage. The previous question and reviewer feedback
+are revision context, not additional factual evidence."""
 
 
 def _language_policy(output_language: str) -> str:
@@ -194,4 +206,61 @@ def build_revision_prompt(
         contents=contents,
         output_language=output_language,
         prompt_version=REVISION_PROMPT_VERSION,
+    )
+
+
+def build_grounded_revision_prompt(
+    spec: QuestionSpec,
+    grounding: GenerationGrounding,
+    previous: GeneratedQuestion,
+    feedback: str,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render a grounded replacement request while preserving the exact source passage."""
+
+    if not feedback or feedback != feedback.strip():
+        raise ValueError("revision feedback must be nonblank and trimmed")
+    if len(feedback) > 8000:
+        raise ValueError("revision feedback must not exceed 8000 characters")
+    labels = ("지문", "질문") if output_language == "ko-KR" else ("Passage", "Question")
+    expected_prefix = f"{labels[0]}:\n{grounding.passage_text}\n\n{labels[1]}:\n"
+    if not previous.stem.startswith(expected_prefix):
+        raise ValueError("previous grounded stem does not preserve the exact passage")
+    previous_question = previous.stem[len(expected_prefix) :]
+    if not previous_question.strip():
+        raise ValueError("previous grounded question must be nonblank")
+    revision_context = {
+        "authoritative_target": _audit_context(spec, output_language),
+        "grounding": {
+            "grounding_version": grounding.grounding_version,
+            "source_document_id": grounding.source_document_id,
+            "document_content_hash": grounding.document_content_hash,
+            "passage_extraction_policy": grounding.passage_extraction_policy,
+            "passage_hash": grounding.passage_hash,
+            "passage_text": grounding.passage_text,
+        },
+        "previous_question": {
+            "generated_question_id": previous.generated_question_id,
+            "question": previous_question,
+            "choices": previous.choices,
+            "correct_choice_index": previous.correct_choice_index,
+            "explanation": previous.explanation,
+        },
+        "reviewer_feedback": feedback,
+    }
+    contents = (
+        "Generate exactly one revised passage-grounded question for the authoritative target. "
+        "Echo all target identity fields exactly and ground the answer only in "
+        "grounding.passage_text.\n\n"
+        + json.dumps(revision_context, ensure_ascii=False, sort_keys=True, indent=2)
+    )
+    return PromptPayload(
+        system_instruction=(
+            f"{GROUNDED_SYSTEM_INSTRUCTION}\n\n{GROUNDED_REVISION_INSTRUCTION}\n\n"
+            f"{_language_policy(output_language)}"
+        ),
+        contents=contents,
+        output_language=output_language,
+        prompt_version=GROUNDED_REVISION_PROMPT_VERSION,
     )

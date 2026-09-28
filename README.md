@@ -219,8 +219,25 @@ its revision prompt version and new deterministic ID together with the preserved
 and the documented review workflow. Canonical lineage is deferred until Backend lifecycle needs
 justify a separate schema/version change.
 
-The current revision command remains restricted to the existing v2 Level 1 targets. Grounded v3
-revision requires explicit passage-preservation rules and remains fail closed in this milestone.
+For ungrounded targets, the revision command remains restricted to the existing v2 Level 1
+targets. Grounded v3 revision uses the same command with an authoritative blueprint and the exact
+grounding artifact:
+
+```bash
+uv run bookmatch-question-generation revise \
+  --blueprint /path/to/assessment-blueprint.json \
+  --question-id q_example \
+  --grounding /path/to/generation-grounding.json \
+  --previous data/generated/example.json \
+  --feedback-file data/generated/revision-feedback/example.txt \
+  --output data/generated/example-rev1.json
+```
+
+The grounded path uses `question-generation-grounded-revision-prompt-v1`, requires
+`generated-question-v3`, revalidates the blueprint and canonical hashes, and reconstructs the final
+stem from the unchanged grounding passage. Standalone `--spec` grounded revision and any mismatch
+in passage, source document, grounding hash, target identity, or output language fail closed. The
+existing ungrounded v2 revision path and its prompt remain unchanged.
 
 ## Output and deterministic ID
 
@@ -311,8 +328,9 @@ contains no topic-specific generation conditionals.
 
 The existing v2 targets still carry evidence metadata rather than source text and cannot justify
 source-specific claims. Grounded v3 is limited to one apply target, one source document, Level 2,
-and a fixed 600–1,800 character passage policy. Integrate/Level 3, multiple-source synthesis, and
-grounded revision remain unsupported. All question types use four choices, so
+and a fixed 600–1,800 character passage policy. Integrate/Level 3 and multiple-source synthesis
+remain unsupported. Grounded revision preserves the exact passage and provenance but does not
+normalize PDF extraction artifacts for display. All question types use four choices, so
 `background_knowledge / recall` measures cued recognition more closely than pure free recall.
 
 Backend currently imports only `generated-question-v2`, Level 1 vocabulary/background targets, and

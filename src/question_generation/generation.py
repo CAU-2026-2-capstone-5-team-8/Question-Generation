@@ -15,6 +15,7 @@ from question_generation.errors import InputContractError
 from question_generation.prompt import (
     PromptPayload,
     build_grounded_prompt,
+    build_grounded_revision_prompt,
     build_prompt,
     build_revision_prompt,
 )
@@ -183,6 +184,59 @@ def revise_question(
         generator=generator,
         prompt=prompt,
         output_language=output_language,
+    )
+
+
+def revise_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGrounding,
+    grounding_artifact_hash: str,
+    previous: GeneratedQuestion,
+    feedback: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestion:
+    """Revise one grounded v3 question without changing its passage or provenance."""
+
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
+    _validate_revision_source(
+        spec,
+        previous,
+        artifact_hash=grounding_artifact_hash,
+        output_language=output_language,
+    )
+    if previous.generated_question_version != GROUNDED_GENERATED_QUESTION_VERSION:
+        raise InputContractError("grounded revision requires generated-question-v3 input")
+    labels = ("지문", "질문") if output_language == "ko-KR" else ("Passage", "Question")
+    expected_prefix = f"{labels[0]}:\n{grounding.passage_text}\n\n{labels[1]}:\n"
+    if (
+        not previous.stem.startswith(expected_prefix)
+        or not previous.stem[len(expected_prefix) :].strip()
+    ):
+        raise InputContractError("previous grounded stem does not preserve the exact passage")
+    prompt = build_grounded_revision_prompt(
+        spec,
+        grounding,
+        previous,
+        feedback,
+        output_language=output_language,
+    )
+    return _generate_from_prompt(
+        spec,
+        artifact_hash=grounding_artifact_hash,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+        generated_question_version=GROUNDED_GENERATED_QUESTION_VERSION,
+        grounding=grounding,
     )
 
 

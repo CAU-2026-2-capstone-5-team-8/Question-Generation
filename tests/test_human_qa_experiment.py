@@ -13,6 +13,9 @@ REVIEW_FILE = ROOT / "reviews" / "os-reviewed-question-generation-v1.jsonl"
 LINEAR_ALGEBRA_REVIEW_FILE = (
     ROOT / "reviews" / "linear-algebra-reviewed-question-generation-v1.jsonl"
 )
+GROUNDED_COMPREHENSION_REVIEW_FILE = (
+    ROOT / "reviews" / "linear-algebra-grounded-comprehension-v1.jsonl"
+)
 
 
 def test_os_reviewed_question_generation_human_qa_is_complete() -> None:
@@ -60,6 +63,29 @@ def test_linear_algebra_reviewed_question_generation_human_qa_summary() -> None:
     assert mean(item.concept_alignment for item in reviews) == 4.8
     assert mean(item.distractor_quality for item in reviews) == 4.6
     assert mean(item.explanation_quality for item in reviews) == 4.6
+
+
+def test_grounded_comprehension_human_review_is_recorded_exactly() -> None:
+    reviews = load_review_jsonl(GROUNDED_COMPREHENSION_REVIEW_FILE)
+
+    assert len(reviews) == 1
+    review = reviews[0]
+    assert review.generated_question_id == "gq_4783115ebe51684dd059a1724b42df8b"
+    assert review.correct is True
+    assert review.concept_alignment == 5
+    assert review.difficulty_appropriate is False
+    assert review.distractor_quality == 4
+    assert review.explanation_quality == 5
+    assert review.status == "needs_revision"
+    assert review.notes == (
+        "정답과 해설은 passage에 정확히 근거하며 matrix concept alignment도 적절하다. 그러나 "
+        "정답 선택지가 passage에 제시된 행렬 예시를 사실상 그대로 재현하므로, 사용자가 matrix의 "
+        "행/열 구조를 새로운 상황에 적용하지 않고 단순 시각적 대조로 답할 수 있다. 따라서 "
+        "comprehension/apply/Level 2의 진단 목적에는 부족하다. 동일 규칙을 새로운 배열이나 entry "
+        "위치에 적용해야 풀 수 있도록 수정이 필요하다. 또한 grounding passage에 PDF text "
+        "extraction으로 인한 공백 및 문자 결합 오류가 다수 존재하여 사용자 표시 품질 개선을 후속 "
+        "검토해야 한다."
+    )
 
 
 def test_human_review_rejects_out_of_range_score() -> None:

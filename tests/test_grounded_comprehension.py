@@ -6,18 +6,24 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from typer.testing import CliRunner
 
-from question_generation.cli import _prepare_generation
+from question_generation.cli import _prepare_generation, app
 from question_generation.errors import (
     GeneratedQuestionValidationError,
     InputContractError,
     UnsupportedQuestionSpecError,
 )
-from question_generation.generation import FakeQuestionGenerator, generate_grounded_question
+from question_generation.generation import (
+    FakeQuestionGenerator,
+    generate_grounded_question,
+    revise_grounded_question,
+)
 from question_generation.input_adapter import load_generation_grounding, load_question_spec
-from question_generation.prompt import build_grounded_prompt
+from question_generation.prompt import build_grounded_prompt, build_grounded_revision_prompt
 from question_generation.schemas import (
     AssessmentEvidenceRef,
+    GeneratedQuestion,
     GenerationGrounding,
     ProviderQuestion,
     QuestionSpec,
@@ -131,6 +137,23 @@ def _grounding(spec: QuestionSpec | None = None) -> GenerationGrounding:
     )
 
 
+def _write_blueprint(path: Path, spec: QuestionSpec) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "topic_id": spec.topic_id,
+                "question_specs": [spec.model_dump(mode="json")],
+                "blueprint_version": "assessment-blueprint-v1",
+                "config_version": spec.config_version,
+                "config_hash": spec.config_hash,
+                "canonical_file_hashes": CANONICAL_HASHES,
+                "book_profiles_hash": HASH,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _provider(spec: QuestionSpec | None = None) -> ProviderQuestion:
     target = spec or _spec()
     return ProviderQuestion(
@@ -150,6 +173,25 @@ def _provider(spec: QuestionSpec | None = None) -> ProviderQuestion:
         ],
         correct_choice_index=0,
         explanation="지문은 항목을 행과 열의 위치로 식별한다고 설명하므로 첫 선택지가 맞다.",
+    )
+
+
+def _previous_question(
+    spec: QuestionSpec | None = None,
+    grounding: GenerationGrounding | None = None,
+    *,
+    blueprint_hash: str = HASH,
+    grounding_artifact_hash: str = GROUNDING_ARTIFACT_HASH,
+) -> GeneratedQuestion:
+    target = spec or _spec()
+    source = grounding or _grounding(target)
+    return generate_grounded_question(
+        target,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=CANONICAL_HASHES,
+        grounding=source,
+        grounding_artifact_hash=grounding_artifact_hash,
+        generator=FakeQuestionGenerator(_provider(target)),
     )
 
 
@@ -205,6 +247,150 @@ def test_grounded_generation_embeds_exact_passage_and_is_deterministic() -> None
     assert first.source_document_ids == [grounding.source_document_id]
     assert grounding.passage_text in first.stem
     assert first.stem.count(grounding.passage_text) == 1
+
+
+def test_grounded_revision_prompt_preserves_passage_and_requires_application() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_question(spec, grounding)
+    feedback = "Require application to a new matrix instead of copying the passage example."
+
+    prompt = build_grounded_revision_prompt(spec, grounding, previous, feedback)
+    rendered = prompt.render()
+    normalized = " ".join(rendered.split())
+
+    assert prompt.prompt_version == "question-generation-grounded-revision-prompt-v1"
+    assert rendered.count(grounding.passage_text) == 1
+    assert feedback in rendered
+    assert previous.generated_question_id in rendered
+    assert "applying a rule from the passage to a new situation" in normalized
+    assert "must not be answerable by copying an example" in normalized
+    assert "Do not modify, rewrite, translate, summarize, or repeat the passage" in normalized
+
+
+def test_grounded_revision_preserves_provenance_and_gets_new_id() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_question(spec, grounding)
+    revised_output = _provider(spec).model_copy(
+        update={
+            "stem": "새로운 4행 2열 배열의 원소 a₃,₂를 올바르게 찾는 방법은 무엇인가?",
+            "choices": [
+                "세 번째 행과 두 번째 열이 만나는 원소를 찾는다.",
+                "두 번째 행과 세 번째 열이 만나는 원소를 찾는다.",
+                "세 번째 행의 모든 원소를 더한다.",
+                "두 번째 열의 원소 개수를 센다.",
+            ],
+            "explanation": "지문은 첫 첨자가 행, 둘째 첨자가 열의 위치를 나타낸다고 설명한다.",
+        }
+    )
+    fake = FakeQuestionGenerator(revised_output)
+
+    revised = revise_grounded_question(
+        spec,
+        blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
+        grounding=grounding,
+        grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+        previous=previous,
+        feedback="Apply the row and column convention to a new matrix.",
+        generator=fake,
+    )
+
+    assert revised.generated_question_version == "generated-question-v3"
+    assert revised.prompt_version == "question-generation-grounded-revision-prompt-v1"
+    assert revised.generated_question_id != previous.generated_question_id
+    assert revised.question_spec_id == previous.question_spec_id
+    assert revised.input_artifact_hash == previous.input_artifact_hash
+    assert revised.source_document_ids == previous.source_document_ids
+    assert revised.stem.startswith(f"지문:\n{grounding.passage_text}\n\n질문:\n")
+    assert revised.stem.count(grounding.passage_text) == 1
+    assert len(fake.prompts) == 1
+
+
+def test_grounded_revision_rejects_changed_previous_passage_before_provider() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_question(spec, grounding).model_copy(
+        update={"stem": "지문:\nchanged passage\n\n질문:\nquestion"}
+    )
+    fake = FakeQuestionGenerator(_provider(spec))
+
+    with pytest.raises(InputContractError, match="exact passage"):
+        revise_grounded_question(
+            spec,
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+            grounding=grounding,
+            grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+            previous=previous,
+            feedback="Apply the rule to a new situation.",
+            generator=fake,
+        )
+
+    assert fake.prompts == []
+
+
+def test_cli_revises_grounded_question_without_overwriting_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = _spec()
+    blueprint_path = tmp_path / "blueprint.json"
+    grounding_path = tmp_path / "grounding.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    output_path = tmp_path / "revised.json"
+    _write_blueprint(blueprint_path, spec)
+    loaded = load_question_spec(blueprint_path, question_id=spec.question_id)
+    grounding = _grounding(spec).model_copy(update={"blueprint_hash": loaded.artifact_hash})
+    grounding_path.write_text(grounding.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    loaded_grounding = load_generation_grounding(grounding_path)
+    previous = _previous_question(
+        spec,
+        grounding,
+        blueprint_hash=loaded.artifact_hash,
+        grounding_artifact_hash=loaded_grounding.artifact_hash,
+    )
+    previous_path.write_text(previous.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    feedback_path.write_text("Apply the passage rule to a new matrix.\n", encoding="utf-8")
+    previous_bytes = previous_path.read_bytes()
+    grounding_bytes = grounding_path.read_bytes()
+    revised_output = _provider(spec).model_copy(
+        update={"stem": "새로운 4행 2열 배열에서 a₃,₂의 위치를 올바르게 찾은 것은?"}
+    )
+    fake = FakeQuestionGenerator(revised_output)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", lambda settings: fake)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--blueprint",
+            str(blueprint_path),
+            "--question-id",
+            spec.question_id,
+            "--grounding",
+            str(grounding_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    revised = GeneratedQuestion.model_validate_json(output_path.read_text(encoding="utf-8"))
+    assert revised.generated_question_version == "generated-question-v3"
+    assert revised.prompt_version == "question-generation-grounded-revision-prompt-v1"
+    assert revised.generated_question_id != previous.generated_question_id
+    assert revised.input_artifact_hash == loaded_grounding.artifact_hash
+    assert grounding.passage_text in revised.stem
+    assert previous_path.read_bytes() == previous_bytes
+    assert grounding_path.read_bytes() == grounding_bytes
+    assert fake.prompts[0].prompt_version == "question-generation-grounded-revision-prompt-v1"
 
 
 @pytest.mark.parametrize(

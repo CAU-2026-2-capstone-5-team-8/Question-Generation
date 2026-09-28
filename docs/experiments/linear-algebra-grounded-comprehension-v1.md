@@ -27,23 +27,43 @@ The question asks the reader to identify the array that preserves the passage's 
 matrix and entry ordering. It has four choices, correct index 2 (zero-based), and a Korean
 passage-grounded explanation. Passing validation is not human approval.
 
-## Human QA worksheet
+## Human QA result
 
-- [ ] passage만으로 정답 결정 가능
-- [ ] 외부 지식이 필수적이지 않음
-- [ ] target concept을 실제로 평가함
-- [ ] 단순 문자열 검색만으로 풀리는 문제가 아님
-- [ ] 정답이 passage 내용과 일치
-- [ ] distractor도 passage 맥락에서 그럴듯함
-- [ ] passage와 문제 사이에 의미적 연결이 있음
-- [ ] difficulty가 QuestionSpec과 맞음
-- [ ] 한국어가 자연스러움
+The first question received `needs_revision` in
+`reviews/linear-algebra-grounded-comprehension-v1.jsonl`:
 
-No `approve`, `reject`, or `needs_revision` decision has been made, and no
-`HumanQuestionReview` JSONL row has been written.
+- correct: `true`
+- concept alignment: `5/5`
+- difficulty appropriate: `false`
+- distractor quality: `4/5`
+- explanation quality: `5/5`
+
+The correct answer and explanation are passage-grounded, but the answer reproduces the passage's
+example matrix. A reader can solve it by visual comparison instead of applying the row/column
+convention to a new situation. The original generated artifact remains preserved.
+
+## Grounded revision
+
+The smallest follow-up reuses the existing revision command, provider adapter, structured provider
+schema, semantic output validation, deterministic ID, and atomic output writer. The grounded path
+adds `question-generation-grounded-revision-prompt-v1` and requires the authoritative blueprint,
+the same `generation-grounding-v1` artifact, and the preserved original v3 question. It revalidates
+the QuestionSpec, canonical hashes, grounding hash, source document, and exact passage before any
+provider call. The replacement is written to a new ignored output file.
+
+The revision prompt requires applying a passage rule to a new situation and explicitly rejects
+copying an example or matching an identical string. It does not change the v2 revision prompt or
+relax the existing ungrounded Level 1 boundary.
+
+## Passage presentation limitation
+
+The exact passage contains PDF extraction artifacts such as missing spaces and character joins.
+This revision deliberately preserves the source substring and passage hash. A future milestone may
+evaluate a provenance-preserving display-normalization layer, separate raw and display passages, a
+cleaner HTML canonical source, or deterministic text normalization. None is implemented here.
 
 ## Remaining boundary
 
-`integrate`/Level 3, multi-source grounding, grounded revision, and Backend import are unsupported.
+`integrate`/Level 3, multi-source grounding, and Backend import are unsupported.
 Backend's current strict v2 handoff rejects this v3 artifact until a separate reviewed contract
 milestone explicitly adds comprehension support.

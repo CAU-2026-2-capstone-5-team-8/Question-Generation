@@ -13,6 +13,7 @@ from question_generation.gemini import GeminiQuestionGenerator
 from question_generation.generation import (
     generate_grounded_question,
     generate_question,
+    revise_grounded_question,
     revise_question,
 )
 from question_generation.input_adapter import (
@@ -243,12 +244,15 @@ def revise(
     blueprint: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     spec: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     question_id: Annotated[str | None, typer.Option("--question-id")] = None,
+    grounding_path: Annotated[
+        Path | None,
+        typer.Option("--grounding", exists=True, dir_okay=False, readable=True),
+    ] = None,
 ) -> None:
     """Revise one generated question from explicit feedback and revalidate it."""
 
     try:
         loaded = _load_input(blueprint, spec, question_id)
-        validate_supported_spec(loaded.spec)
         previous_question = _load_previous_question(previous)
         feedback = _load_revision_feedback(feedback_file)
         resolved_output = output.resolve()
@@ -257,18 +261,46 @@ def revise(
             previous.resolve(),
             feedback_file.resolve(),
         }
+        loaded_grounding: LoadedGenerationGrounding | None = None
+        if loaded.spec.question_type == "comprehension":
+            if loaded.blueprint_canonical_file_hashes is None:
+                raise InputContractError(
+                    "grounded revision requires --blueprint; standalone --spec is unsupported"
+                )
+            if grounding_path is None:
+                raise InputContractError("--grounding is required for grounded revision")
+            loaded_grounding = load_generation_grounding(grounding_path)
+            protected_inputs.add(loaded_grounding.artifact_path)
+        else:
+            if grounding_path is not None:
+                raise InputContractError("--grounding is valid only for comprehension revision")
+            validate_supported_spec(loaded.spec)
         if resolved_output in protected_inputs:
             raise InputContractError("revision output path must differ from every input path")
         settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
-        question = revise_question(
-            loaded.spec,
-            artifact_hash=loaded.artifact_hash,
-            previous=previous_question,
-            feedback=feedback,
-            generator=generator,
-            output_language=settings.output_language,
-        )
+        if loaded_grounding is None:
+            question = revise_question(
+                loaded.spec,
+                artifact_hash=loaded.artifact_hash,
+                previous=previous_question,
+                feedback=feedback,
+                generator=generator,
+                output_language=settings.output_language,
+            )
+        else:
+            assert loaded.blueprint_canonical_file_hashes is not None
+            question = revise_grounded_question(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=loaded_grounding.grounding,
+                grounding_artifact_hash=loaded_grounding.artifact_hash,
+                previous=previous_question,
+                feedback=feedback,
+                generator=generator,
+                output_language=settings.output_language,
+            )
         try:
             _write_json_atomic(
                 resolved_output,
