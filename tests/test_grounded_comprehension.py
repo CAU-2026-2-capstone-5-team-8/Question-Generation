@@ -249,6 +249,25 @@ def test_grounded_generation_embeds_exact_passage_and_is_deterministic() -> None
     assert first.stem.count(grounding.passage_text) == 1
 
 
+def test_grounded_generation_rejects_provider_stem_repeating_normalized_passage() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    repeated_passage = " ".join(grounding.passage_text.split())
+    output = _provider(spec).model_copy(
+        update={"stem": f"{repeated_passage}\n\n이 지문을 적용한 질문은 무엇인가?"}
+    )
+
+    with pytest.raises(GeneratedQuestionValidationError, match="complete grounding passage"):
+        generate_grounded_question(
+            spec,
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+            grounding=grounding,
+            grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+            generator=FakeQuestionGenerator(output),
+        )
+
+
 def test_grounded_revision_prompt_preserves_passage_and_requires_application() -> None:
     spec = _spec()
     grounding = _grounding(spec)

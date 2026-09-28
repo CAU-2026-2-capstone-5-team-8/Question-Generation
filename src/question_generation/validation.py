@@ -153,7 +153,12 @@ def _validate_choice_references(explanation: str, correct_index: int) -> None:
             )
 
 
-def validate_provider_question(output: ProviderQuestion, spec: QuestionSpec) -> None:
+def validate_provider_question(
+    output: ProviderQuestion,
+    spec: QuestionSpec,
+    *,
+    grounding: GenerationGrounding | None = None,
+) -> None:
     """Validate structured syntax plus meaning that JSON Schema cannot guarantee."""
 
     expected = {
@@ -178,6 +183,13 @@ def validate_provider_question(output: ProviderQuestion, spec: QuestionSpec) -> 
     if mismatches:
         raise GeneratedQuestionValidationError(
             "provider output changed authoritative QuestionSpec fields: " + ", ".join(mismatches)
+        )
+
+    if grounding is not None and normalize_text(grounding.passage_text) in normalize_text(
+        output.stem
+    ):
+        raise GeneratedQuestionValidationError(
+            "provider stem must not repeat the complete grounding passage"
         )
 
     normalized_choices = [normalize_text(choice) for choice in output.choices]

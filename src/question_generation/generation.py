@@ -251,7 +251,7 @@ def _generate_from_prompt(
     grounding: GenerationGrounding | None = None,
 ) -> GeneratedQuestion:
     provider = generator.generate(prompt)
-    validate_provider_question(provider.output, spec)
+    validate_provider_question(provider.output, spec, grounding=grounding)
 
     evidence_ids = list(dict.fromkeys(item.evidence_id for item in spec.supporting_evidence))
     stem = provider.output.stem
