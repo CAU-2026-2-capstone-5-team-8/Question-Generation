@@ -22,6 +22,7 @@ class LoadedQuestionSpec:
     spec: QuestionSpec
     artifact_hash: str
     artifact_path: Path
+    blueprint_canonical_file_hashes: dict[str, str] | None
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
     """Load either one QuestionSpec object or select one from an AssessmentBlueprint."""
 
     payload, content = _read_json(path)
+    blueprint_canonical_file_hashes: dict[str, str] | None = None
     try:
         if "question_specs" in payload:
             if question_id is None:
@@ -64,6 +66,7 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
                     f"question_id {question_id!r} was not found exactly once in the blueprint"
                 )
             spec = matches[0]
+            blueprint_canonical_file_hashes = blueprint.canonical_file_hashes
         else:
             spec = QuestionSpec.model_validate(payload)
             if question_id is not None and spec.question_id != question_id:
@@ -79,6 +82,7 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
         spec=spec,
         artifact_hash=_artifact_hash(content),
         artifact_path=path.resolve(),
+        blueprint_canonical_file_hashes=blueprint_canonical_file_hashes,
     )
 
 

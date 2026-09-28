@@ -96,6 +96,7 @@ def validate_grounding_for_spec(
     spec: QuestionSpec,
     *,
     blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
 ) -> None:
     """Fail closed unless the grounding artifact exactly binds the selected QuestionSpec."""
 
@@ -117,6 +118,10 @@ def validate_grounding_for_spec(
     if mismatches:
         raise UnsupportedQuestionSpecError(
             "grounding artifact does not match authoritative QuestionSpec: " + ", ".join(mismatches)
+        )
+    if grounding.canonical_file_hashes != canonical_file_hashes:
+        raise UnsupportedQuestionSpecError(
+            "grounding canonical hashes do not match the authoritative blueprint"
         )
     if grounding.book_id not in spec.supporting_book_ids:
         raise UnsupportedQuestionSpecError("grounding book does not match supporting_book_ids")

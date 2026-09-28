@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from question_generation.cli import _prepare_generation
 from question_generation.errors import (
     GeneratedQuestionValidationError,
     InputContractError,
     UnsupportedQuestionSpecError,
 )
 from question_generation.generation import FakeQuestionGenerator, generate_grounded_question
-from question_generation.input_adapter import load_generation_grounding
+from question_generation.input_adapter import load_generation_grounding, load_question_spec
 from question_generation.prompt import build_grounded_prompt
 from question_generation.schemas import (
     AssessmentEvidenceRef,
@@ -29,6 +30,9 @@ from question_generation.validation import (
 
 HASH = "sha256:" + "1" * 64
 GROUNDING_ARTIFACT_HASH = "sha256:" + "2" * 64
+CANONICAL_HASHES = {
+    name: HASH for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+}
 
 
 def _hash_text(value: str) -> str:
@@ -122,9 +126,7 @@ def _grounding(spec: QuestionSpec | None = None) -> GenerationGrounding:
         rights_note="Explicitly licensed by the author.",
         source_content_hash=HASH,
         edition_relation="unspecified",
-        canonical_file_hashes={
-            name: HASH for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
-        },
+        canonical_file_hashes=CANONICAL_HASHES,
         blueprint_hash=HASH,
     )
 
@@ -154,7 +156,12 @@ def _provider(spec: QuestionSpec | None = None) -> ProviderQuestion:
 def test_grounded_prompt_contains_only_exact_passage_and_bound_identity() -> None:
     spec = _spec()
     grounding = _grounding(spec)
-    validate_grounding_for_spec(grounding, spec, blueprint_hash=HASH)
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
+    )
 
     prompt = build_grounded_prompt(spec, grounding)
     rendered = prompt.render()
@@ -174,6 +181,7 @@ def test_grounded_generation_embeds_exact_passage_and_is_deterministic() -> None
     first = generate_grounded_question(
         spec,
         blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
         grounding=grounding,
         grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
         generator=fake,
@@ -181,6 +189,7 @@ def test_grounded_generation_embeds_exact_passage_and_is_deterministic() -> None
     second = generate_grounded_question(
         spec,
         blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
         grounding=grounding,
         grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
         generator=FakeQuestionGenerator(_provider(spec)),
@@ -212,7 +221,38 @@ def test_grounded_generation_embeds_exact_passage_and_is_deterministic() -> None
 def test_grounding_identity_mismatch_fails_closed(field: str, value: str) -> None:
     grounding = _grounding().model_copy(update={field: value})
     with pytest.raises(UnsupportedQuestionSpecError):
-        validate_grounding_for_spec(grounding, _spec(), blueprint_hash=HASH)
+        validate_grounding_for_spec(
+            grounding,
+            _spec(),
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+        )
+
+
+def test_grounding_canonical_hash_mismatch_fails_closed() -> None:
+    altered_hashes = {**CANONICAL_HASHES, "documents.jsonl": "sha256:" + "9" * 64}
+    grounding = _grounding().model_copy(update={"canonical_file_hashes": altered_hashes})
+    with pytest.raises(UnsupportedQuestionSpecError, match="canonical hashes"):
+        validate_grounding_for_spec(
+            grounding,
+            _spec(),
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+        )
+
+
+def test_grounded_comprehension_rejects_standalone_spec(tmp_path: Path) -> None:
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(_spec().model_dump(mode="json")), encoding="utf-8")
+    loaded = load_question_spec(spec_path)
+
+    assert loaded.blueprint_canonical_file_hashes is None
+    with pytest.raises(InputContractError, match="requires --blueprint"):
+        _prepare_generation(
+            loaded,
+            tmp_path / "unused-grounding.json",
+            output_language="ko-KR",
+        )
 
 
 def test_grounding_loader_rejects_altered_passage_hash(tmp_path: Path) -> None:
@@ -262,6 +302,7 @@ def test_generated_question_versions_enforce_their_own_semantics() -> None:
     question = generate_grounded_question(
         _spec(),
         blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
         grounding=_grounding(),
         grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
         generator=FakeQuestionGenerator(_provider()),

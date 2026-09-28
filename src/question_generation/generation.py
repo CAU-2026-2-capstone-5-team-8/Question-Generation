@@ -91,6 +91,7 @@ def generate_grounded_question(
     spec: QuestionSpec,
     *,
     blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
     grounding: GenerationGrounding,
     grounding_artifact_hash: str,
     generator: QuestionGenerator,
@@ -98,7 +99,12 @@ def generate_grounded_question(
 ) -> GeneratedQuestion:
     """Generate the narrow comprehension/apply slice from an exact grounded passage."""
 
-    validate_grounding_for_spec(grounding, spec, blueprint_hash=blueprint_hash)
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
     prompt = build_grounded_prompt(spec, grounding, output_language=output_language)
     return _generate_from_prompt(
         spec,

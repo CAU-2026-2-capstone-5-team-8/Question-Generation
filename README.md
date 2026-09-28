@@ -187,6 +187,9 @@ uv run bookmatch-question-generation generate \
   --output data/generated/la-matrix-comprehension.json
 ```
 
+Grounded comprehension requires `--blueprint`; standalone `--spec` input is rejected because it
+cannot prove the authoritative blueprint hash and canonical dataset hashes.
+
 `data/generated/` is ignored. The CLI reports the generated ID, target, model, output path, and
 provider-reported token counts when present. It never estimates missing token usage.
 

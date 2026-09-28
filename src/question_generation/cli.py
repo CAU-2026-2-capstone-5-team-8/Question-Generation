@@ -100,6 +100,10 @@ def _prepare_generation(
     output_language: str,
 ) -> tuple[PromptPayload, LoadedGenerationGrounding | None]:
     if loaded.spec.question_type == "comprehension":
+        if loaded.blueprint_canonical_file_hashes is None:
+            raise InputContractError(
+                "grounded comprehension requires --blueprint; standalone --spec is unsupported"
+            )
         if grounding_path is None:
             raise InputContractError("--grounding is required for comprehension generation")
         grounding = load_generation_grounding(grounding_path)
@@ -107,6 +111,7 @@ def _prepare_generation(
             grounding.grounding,
             loaded.spec,
             blueprint_hash=loaded.artifact_hash,
+            canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
         )
         return (
             build_grounded_prompt(
@@ -192,9 +197,11 @@ def generate(
                 output_language=settings.output_language,
             )
         else:
+            assert loaded.blueprint_canonical_file_hashes is not None
             question = generate_grounded_question(
                 loaded.spec,
                 blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
                 grounding=grounding.grounding,
                 grounding_artifact_hash=grounding.artifact_hash,
                 generator=generator,
