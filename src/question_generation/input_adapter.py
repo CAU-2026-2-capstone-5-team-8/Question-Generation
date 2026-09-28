@@ -10,12 +10,24 @@ from pydantic import ValidationError
 
 from question_generation.config import SUPPORTED_QUESTION_SPEC_VERSION
 from question_generation.errors import InputContractError
-from question_generation.schemas import AssessmentBlueprintEnvelope, QuestionSpec
+from question_generation.schemas import (
+    AssessmentBlueprintEnvelope,
+    GenerationGrounding,
+    QuestionSpec,
+)
 
 
 @dataclass(frozen=True)
 class LoadedQuestionSpec:
     spec: QuestionSpec
+    artifact_hash: str
+    artifact_path: Path
+    blueprint_canonical_file_hashes: dict[str, str] | None
+
+
+@dataclass(frozen=True)
+class LoadedGenerationGrounding:
+    grounding: GenerationGrounding
     artifact_hash: str
     artifact_path: Path
 
@@ -42,6 +54,7 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
     """Load either one QuestionSpec object or select one from an AssessmentBlueprint."""
 
     payload, content = _read_json(path)
+    blueprint_canonical_file_hashes: dict[str, str] | None = None
     try:
         if "question_specs" in payload:
             if question_id is None:
@@ -53,6 +66,7 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
                     f"question_id {question_id!r} was not found exactly once in the blueprint"
                 )
             spec = matches[0]
+            blueprint_canonical_file_hashes = blueprint.canonical_file_hashes
         else:
             spec = QuestionSpec.model_validate(payload)
             if question_id is not None and spec.question_id != question_id:
@@ -66,6 +80,22 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
         )
     return LoadedQuestionSpec(
         spec=spec,
+        artifact_hash=_artifact_hash(content),
+        artifact_path=path.resolve(),
+        blueprint_canonical_file_hashes=blueprint_canonical_file_hashes,
+    )
+
+
+def load_generation_grounding(path: Path) -> LoadedGenerationGrounding:
+    """Load one strict generation-grounding-v1 artifact and hash its exact bytes."""
+
+    payload, content = _read_json(path)
+    try:
+        grounding = GenerationGrounding.model_validate(payload)
+    except ValidationError as exc:
+        raise InputContractError(f"grounding contract validation failed: {exc}") from exc
+    return LoadedGenerationGrounding(
+        grounding=grounding,
         artifact_hash=_artifact_hash(content),
         artifact_path=path.resolve(),
     )

@@ -1,5 +1,6 @@
 """Versioned input, provider-output, final-output, and review contracts."""
 
+import hashlib
 import re
 from typing import Any, Literal
 
@@ -171,13 +172,78 @@ class AssessmentBlueprintEnvelope(BaseModel):
         return self
 
 
+class GenerationGrounding(StrictModel):
+    """Local copy of ML's generation-grounding-v1 artifact contract."""
+
+    schema_version: Literal[1]
+    grounding_version: Literal["generation-grounding-v1"]
+    question_spec_id: str = Field(pattern=r"^q_[0-9a-f]{20}$")
+    question_spec_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    topic_id: str
+    question_type: Literal["comprehension"]
+    cognitive_operation: Literal["apply"]
+    target_difficulty: Literal[2]
+    primary_concept: str
+    related_concepts: list[str]
+    source_document_id: str
+    book_id: str
+    document_type: Literal["preface", "introduction", "preview", "sample_chapter", "other"]
+    document_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    passage_text: str = Field(min_length=600, max_length=1800)
+    passage_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    passage_extraction_policy: Literal["first-concept-sentence-window-v1"]
+    source_id: str
+    provider: str
+    source_type: str
+    source_url: str
+    source_retrieved_at: str
+    license: str
+    rights_note: str | None = None
+    source_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    edition_relation: Literal["exact", "same_work", "unspecified"]
+    canonical_file_hashes: dict[str, str]
+    blueprint_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    _validate_strings = field_validator(
+        "topic_id",
+        "primary_concept",
+        "source_document_id",
+        "book_id",
+        "source_id",
+        "provider",
+        "source_type",
+        "source_url",
+        "source_retrieved_at",
+        "license",
+    )(_nonblank)
+
+    @field_validator("canonical_file_hashes")
+    @classmethod
+    def canonical_hashes_must_cover_exact_inputs(cls, value: dict[str, str]) -> dict[str, str]:
+        required = {"books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl"}
+        if set(value) != required or any(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None for digest in value.values()
+        ):
+            raise ValueError("canonical file hashes must cover all four JSONL inputs")
+        return value
+
+    @model_validator(mode="after")
+    def passage_and_target_must_be_consistent(self) -> "GenerationGrounding":
+        actual = "sha256:" + hashlib.sha256(self.passage_text.encode("utf-8")).hexdigest()
+        if self.passage_hash != actual:
+            raise ValueError("passage hash does not match passage text")
+        if self.related_concepts:
+            raise ValueError("generation-grounding-v1 supports only single-concept apply targets")
+        return self
+
+
 class ProviderQuestion(StrictModel):
     """The only schema Gemini is allowed to return."""
 
     question_spec_id: str = Field(pattern=r"^q_[0-9a-f]{20}$")
     topic_id: str
-    question_type: Literal["vocabulary", "background_knowledge"]
-    cognitive_operation: Literal["recognize", "recall"]
+    question_type: Literal["vocabulary", "background_knowledge", "comprehension"]
+    cognitive_operation: Literal["recognize", "recall", "apply"]
     primary_concept: str
     related_concepts: list[str]
     target_difficulty: int = Field(ge=1, le=3)
@@ -209,12 +275,12 @@ class GeneratedQuestion(StrictModel):
     generated_question_version: str
     question_spec_id: str = Field(pattern=r"^q_[0-9a-f]{20}$")
     topic_id: str
-    question_type: Literal["vocabulary", "background_knowledge"]
-    cognitive_operation: Literal["recognize", "recall"]
+    question_type: Literal["vocabulary", "background_knowledge", "comprehension"]
+    cognitive_operation: Literal["recognize", "recall", "apply"]
     primary_concept: str
     related_concepts: list[str]
     prerequisite_concepts: list[str]
-    target_difficulty: Literal[1]
+    target_difficulty: Literal[1, 2]
     difficulty_rationale: str
     evidence_summary: str
     stem: str
@@ -276,6 +342,28 @@ class GeneratedQuestion(StrictModel):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
+        if self.generated_question_version == "generated-question-v2":
+            if (
+                (self.question_type, self.cognitive_operation)
+                not in {
+                    ("vocabulary", "recognize"),
+                    ("background_knowledge", "recall"),
+                }
+                or self.target_difficulty != 1
+                or self.related_concepts
+                or self.source_document_ids
+            ):
+                raise ValueError("generated-question-v2 contains an unsupported target")
+        elif self.generated_question_version == "generated-question-v3":
+            if (
+                (self.question_type, self.cognitive_operation) != ("comprehension", "apply")
+                or self.target_difficulty != 2
+                or self.related_concepts
+                or len(self.source_document_ids) != 1
+            ):
+                raise ValueError("generated-question-v3 supports only grounded comprehension/apply")
+        else:
+            raise ValueError("unsupported generated_question_version")
         return self
 
 

@@ -10,11 +10,21 @@ import typer
 from question_generation.config import load_settings
 from question_generation.errors import InputContractError, QuestionGenerationError
 from question_generation.gemini import GeminiQuestionGenerator
-from question_generation.generation import generate_question, revise_question
-from question_generation.input_adapter import LoadedQuestionSpec, load_question_spec
-from question_generation.prompt import build_prompt
+from question_generation.generation import (
+    generate_grounded_question,
+    generate_question,
+    revise_grounded_question,
+    revise_question,
+)
+from question_generation.input_adapter import (
+    LoadedGenerationGrounding,
+    LoadedQuestionSpec,
+    load_generation_grounding,
+    load_question_spec,
+)
+from question_generation.prompt import PromptPayload, build_grounded_prompt, build_prompt
 from question_generation.schemas import GeneratedQuestion
-from question_generation.validation import validate_supported_spec
+from question_generation.validation import validate_grounding_for_spec, validate_supported_spec
 
 app = typer.Typer(
     help="Generate validated questions from authoritative ML QuestionSpec JSON artifacts.",
@@ -84,24 +94,61 @@ def _load_revision_feedback(path: Path) -> str:
     return feedback
 
 
+def _prepare_generation(
+    loaded: LoadedQuestionSpec,
+    grounding_path: Path | None,
+    *,
+    output_language: str,
+) -> tuple[PromptPayload, LoadedGenerationGrounding | None]:
+    if loaded.spec.question_type == "comprehension":
+        if loaded.blueprint_canonical_file_hashes is None:
+            raise InputContractError(
+                "grounded comprehension requires --blueprint; standalone --spec is unsupported"
+            )
+        if grounding_path is None:
+            raise InputContractError("--grounding is required for comprehension generation")
+        grounding = load_generation_grounding(grounding_path)
+        validate_grounding_for_spec(
+            grounding.grounding,
+            loaded.spec,
+            blueprint_hash=loaded.artifact_hash,
+            canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+        )
+        return (
+            build_grounded_prompt(
+                loaded.spec,
+                grounding.grounding,
+                output_language=output_language,
+            ),
+            grounding,
+        )
+    if grounding_path is not None:
+        raise InputContractError("--grounding is valid only for comprehension generation")
+    validate_supported_spec(loaded.spec)
+    return build_prompt(loaded.spec, output_language=output_language), None
+
+
 @app.command("render-prompt")
 def render_prompt(
     blueprint: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     spec: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     question_id: Annotated[str | None, typer.Option("--question-id")] = None,
+    grounding_path: Annotated[
+        Path | None,
+        typer.Option("--grounding", exists=True, dir_okay=False, readable=True),
+    ] = None,
 ) -> None:
     """Render the deterministic prompt without reading GEMINI_API_KEY or calling a provider."""
 
     try:
         loaded = _load_input(blueprint, spec, question_id)
-        validate_supported_spec(loaded.spec)
         settings = load_settings(require_api_key=False)
-        typer.echo(
-            build_prompt(
-                loaded.spec,
-                output_language=settings.output_language,
-            ).render()
+        prompt, _ = _prepare_generation(
+            loaded,
+            grounding_path,
+            output_language=settings.output_language,
         )
+        typer.echo(prompt.render())
     except (QuestionGenerationError, ValueError) as exc:
         _fail(exc)
 
@@ -112,6 +159,10 @@ def generate(
     blueprint: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     spec: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     question_id: Annotated[str | None, typer.Option("--question-id")] = None,
+    grounding_path: Annotated[
+        Path | None,
+        typer.Option("--grounding", exists=True, dir_okay=False, readable=True),
+    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Render prompt only; never require a key or call Gemini."),
@@ -121,29 +172,42 @@ def generate(
 
     try:
         loaded = _load_input(blueprint, spec, question_id)
-        validate_supported_spec(loaded.spec)
+        settings = load_settings(require_api_key=not dry_run)
+        prompt, grounding = _prepare_generation(
+            loaded,
+            grounding_path,
+            output_language=settings.output_language,
+        )
         if dry_run:
-            settings = load_settings(require_api_key=False)
-            typer.echo(
-                build_prompt(
-                    loaded.spec,
-                    output_language=settings.output_language,
-                ).render()
-            )
+            typer.echo(prompt.render())
             return
         if output is None:
             raise typer.BadParameter("--output is required unless --dry-run is used")
         resolved_output = output.resolve()
-        if resolved_output == loaded.artifact_path:
+        protected_inputs = {loaded.artifact_path}
+        if grounding is not None:
+            protected_inputs.add(grounding.artifact_path)
+        if resolved_output in protected_inputs:
             raise InputContractError("output path must differ from the input artifact path")
-        settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
-        question = generate_question(
-            loaded.spec,
-            artifact_hash=loaded.artifact_hash,
-            generator=generator,
-            output_language=settings.output_language,
-        )
+        if grounding is None:
+            question = generate_question(
+                loaded.spec,
+                artifact_hash=loaded.artifact_hash,
+                generator=generator,
+                output_language=settings.output_language,
+            )
+        else:
+            assert loaded.blueprint_canonical_file_hashes is not None
+            question = generate_grounded_question(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=grounding.grounding,
+                grounding_artifact_hash=grounding.artifact_hash,
+                generator=generator,
+                output_language=settings.output_language,
+            )
         try:
             _write_json_atomic(
                 resolved_output,
@@ -180,12 +244,15 @@ def revise(
     blueprint: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     spec: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     question_id: Annotated[str | None, typer.Option("--question-id")] = None,
+    grounding_path: Annotated[
+        Path | None,
+        typer.Option("--grounding", exists=True, dir_okay=False, readable=True),
+    ] = None,
 ) -> None:
     """Revise one generated question from explicit feedback and revalidate it."""
 
     try:
         loaded = _load_input(blueprint, spec, question_id)
-        validate_supported_spec(loaded.spec)
         previous_question = _load_previous_question(previous)
         feedback = _load_revision_feedback(feedback_file)
         resolved_output = output.resolve()
@@ -194,18 +261,46 @@ def revise(
             previous.resolve(),
             feedback_file.resolve(),
         }
+        loaded_grounding: LoadedGenerationGrounding | None = None
+        if loaded.spec.question_type == "comprehension":
+            if loaded.blueprint_canonical_file_hashes is None:
+                raise InputContractError(
+                    "grounded revision requires --blueprint; standalone --spec is unsupported"
+                )
+            if grounding_path is None:
+                raise InputContractError("--grounding is required for grounded revision")
+            loaded_grounding = load_generation_grounding(grounding_path)
+            protected_inputs.add(loaded_grounding.artifact_path)
+        else:
+            if grounding_path is not None:
+                raise InputContractError("--grounding is valid only for comprehension revision")
+            validate_supported_spec(loaded.spec)
         if resolved_output in protected_inputs:
             raise InputContractError("revision output path must differ from every input path")
         settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
-        question = revise_question(
-            loaded.spec,
-            artifact_hash=loaded.artifact_hash,
-            previous=previous_question,
-            feedback=feedback,
-            generator=generator,
-            output_language=settings.output_language,
-        )
+        if loaded_grounding is None:
+            question = revise_question(
+                loaded.spec,
+                artifact_hash=loaded.artifact_hash,
+                previous=previous_question,
+                feedback=feedback,
+                generator=generator,
+                output_language=settings.output_language,
+            )
+        else:
+            assert loaded.blueprint_canonical_file_hashes is not None
+            question = revise_grounded_question(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=loaded_grounding.grounding,
+                grounding_artifact_hash=loaded_grounding.artifact_hash,
+                previous=previous_question,
+                feedback=feedback,
+                generator=generator,
+                output_language=settings.output_language,
+            )
         try:
             _write_json_atomic(
                 resolved_output,

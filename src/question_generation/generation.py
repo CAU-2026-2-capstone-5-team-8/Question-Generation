@@ -9,16 +9,28 @@ from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
+    GROUNDED_GENERATED_QUESTION_VERSION,
 )
 from question_generation.errors import InputContractError
-from question_generation.prompt import PromptPayload, build_prompt, build_revision_prompt
+from question_generation.prompt import (
+    PromptPayload,
+    build_grounded_prompt,
+    build_grounded_revision_prompt,
+    build_prompt,
+    build_revision_prompt,
+)
 from question_generation.schemas import (
     GeneratedQuestion,
+    GenerationGrounding,
     ProviderQuestion,
     QuestionSpec,
     TokenUsage,
 )
-from question_generation.validation import validate_provider_question, validate_supported_spec
+from question_generation.validation import (
+    validate_grounding_for_spec,
+    validate_provider_question,
+    validate_supported_spec,
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +85,36 @@ def generate_question(
         generator=generator,
         prompt=prompt,
         output_language=output_language,
+    )
+
+
+def generate_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGrounding,
+    grounding_artifact_hash: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestion:
+    """Generate the narrow comprehension/apply slice from an exact grounded passage."""
+
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
+    prompt = build_grounded_prompt(spec, grounding, output_language=output_language)
+    return _generate_from_prompt(
+        spec,
+        artifact_hash=grounding_artifact_hash,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+        generated_question_version=GROUNDED_GENERATED_QUESTION_VERSION,
+        grounding=grounding,
     )
 
 
@@ -145,6 +187,59 @@ def revise_question(
     )
 
 
+def revise_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGrounding,
+    grounding_artifact_hash: str,
+    previous: GeneratedQuestion,
+    feedback: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestion:
+    """Revise one grounded v3 question without changing its passage or provenance."""
+
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
+    _validate_revision_source(
+        spec,
+        previous,
+        artifact_hash=grounding_artifact_hash,
+        output_language=output_language,
+    )
+    if previous.generated_question_version != GROUNDED_GENERATED_QUESTION_VERSION:
+        raise InputContractError("grounded revision requires generated-question-v3 input")
+    labels = ("지문", "질문") if output_language == "ko-KR" else ("Passage", "Question")
+    expected_prefix = f"{labels[0]}:\n{grounding.passage_text}\n\n{labels[1]}:\n"
+    if (
+        not previous.stem.startswith(expected_prefix)
+        or not previous.stem[len(expected_prefix) :].strip()
+    ):
+        raise InputContractError("previous grounded stem does not preserve the exact passage")
+    prompt = build_grounded_revision_prompt(
+        spec,
+        grounding,
+        previous,
+        feedback,
+        output_language=output_language,
+    )
+    return _generate_from_prompt(
+        spec,
+        artifact_hash=grounding_artifact_hash,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+        generated_question_version=GROUNDED_GENERATED_QUESTION_VERSION,
+        grounding=grounding,
+    )
+
+
 def _generate_from_prompt(
     spec: QuestionSpec,
     *,
@@ -152,13 +247,19 @@ def _generate_from_prompt(
     generator: QuestionGenerator,
     prompt: PromptPayload,
     output_language: str,
+    generated_question_version: str = GENERATED_QUESTION_VERSION,
+    grounding: GenerationGrounding | None = None,
 ) -> GeneratedQuestion:
     provider = generator.generate(prompt)
-    validate_provider_question(provider.output, spec)
+    validate_provider_question(provider.output, spec, grounding=grounding)
 
     evidence_ids = list(dict.fromkeys(item.evidence_id for item in spec.supporting_evidence))
+    stem = provider.output.stem
+    if grounding is not None:
+        labels = ("지문", "질문") if output_language == "ko-KR" else ("Passage", "Question")
+        stem = f"{labels[0]}:\n{grounding.passage_text}\n\n{labels[1]}:\n{provider.output.stem}"
     identity_and_output: dict[str, object] = {
-        "generated_question_version": GENERATED_QUESTION_VERSION,
+        "generated_question_version": generated_question_version,
         "question_spec_id": spec.question_id,
         "topic_id": spec.topic_id,
         "question_type": spec.question_type,
@@ -169,7 +270,7 @@ def _generate_from_prompt(
         "target_difficulty": spec.target_difficulty,
         "difficulty_rationale": spec.difficulty_rationale,
         "evidence_summary": spec.evidence_summary,
-        "stem": provider.output.stem,
+        "stem": stem,
         "choices": provider.output.choices,
         "correct_choice_index": provider.output.correct_choice_index,
         "explanation": provider.output.explanation,
