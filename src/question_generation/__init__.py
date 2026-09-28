@@ -6,6 +6,7 @@ from question_generation.config import (
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
     PROMPT_VERSION,
+    REVISION_PROMPT_VERSION,
 )
 from question_generation.schemas import GeneratedQuestion, QuestionSpec
 
@@ -15,6 +16,7 @@ __all__ = [
     "GENERATED_QUESTION_VERSION",
     "GENERATION_CONFIG_VERSION",
     "PROMPT_VERSION",
+    "REVISION_PROMPT_VERSION",
     "GeneratedQuestion",
     "QuestionSpec",
 ]

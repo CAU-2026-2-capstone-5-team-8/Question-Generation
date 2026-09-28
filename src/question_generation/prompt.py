@@ -3,8 +3,12 @@
 import json
 from dataclasses import dataclass
 
-from question_generation.config import DEFAULT_OUTPUT_LANGUAGE, PROMPT_VERSION
-from question_generation.schemas import QuestionSpec
+from question_generation.config import (
+    DEFAULT_OUTPUT_LANGUAGE,
+    PROMPT_VERSION,
+    REVISION_PROMPT_VERSION,
+)
+from question_generation.schemas import GeneratedQuestion, QuestionSpec
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,13 @@ background_knowledge/recall Level 1, test prerequisite recall or basic understan
 concept. The explanation must identify why the correct choice is correct without referring to a
 nonexistent source."""
 
+REVISION_INSTRUCTION = """You revise one previously generated diagnostic question in response to
+reviewer feedback. The QuestionSpec remains authoritative. Return a complete replacement question,
+not a patch or commentary. Address every applicable feedback point while preserving the target
+concept, question type, cognitive operation, difficulty, and configured output-language policy. Do
+not copy an identified factual, terminology, ambiguity, or wording error into the revision. The
+previous question and feedback are revision context only and are not citable source evidence."""
+
 
 def _language_policy(output_language: str) -> str:
     if not output_language or output_language != output_language.strip():
@@ -50,14 +61,8 @@ identifiers exactly as provided; do not translate or alter identity fields in th
 response. Use natural localized technical terminology without changing its meaning."""
 
 
-def build_prompt(
-    spec: QuestionSpec,
-    *,
-    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
-) -> PromptPayload:
-    """Render only the target and compact audit metadata; never send whole topic/book content."""
-
-    audit_context = {
+def _audit_context(spec: QuestionSpec, output_language: str) -> dict[str, object]:
+    return {
         "question_spec_id": spec.question_id,
         "topic_id": spec.topic_id,
         "question_type": spec.question_type,
@@ -84,6 +89,16 @@ def build_prompt(
         "config_hash": spec.config_hash,
         "output_language": output_language,
     }
+
+
+def build_prompt(
+    spec: QuestionSpec,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render only the target and compact audit metadata; never send whole topic/book content."""
+
+    audit_context = _audit_context(spec, output_language)
     contents = (
         "Generate exactly one question for the following authoritative target. "
         "Echo all target identity fields exactly.\n\n"
@@ -93,4 +108,43 @@ def build_prompt(
         system_instruction=f"{SYSTEM_INSTRUCTION}\n\n{_language_policy(output_language)}",
         contents=contents,
         output_language=output_language,
+    )
+
+
+def build_revision_prompt(
+    spec: QuestionSpec,
+    previous: GeneratedQuestion,
+    feedback: str,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render a versioned replacement request from one prior question and reviewer feedback."""
+
+    if not feedback or feedback != feedback.strip():
+        raise ValueError("revision feedback must be nonblank and trimmed")
+    if len(feedback) > 8000:
+        raise ValueError("revision feedback must not exceed 8000 characters")
+    revision_context = {
+        "authoritative_target": _audit_context(spec, output_language),
+        "previous_question": {
+            "generated_question_id": previous.generated_question_id,
+            "stem": previous.stem,
+            "choices": previous.choices,
+            "correct_choice_index": previous.correct_choice_index,
+            "explanation": previous.explanation,
+        },
+        "reviewer_feedback": feedback,
+    }
+    contents = (
+        "Generate exactly one revised question for the authoritative target. "
+        "Echo all target identity fields exactly.\n\n"
+        + json.dumps(revision_context, ensure_ascii=False, sort_keys=True, indent=2)
+    )
+    return PromptPayload(
+        system_instruction=(
+            f"{SYSTEM_INSTRUCTION}\n\n{REVISION_INSTRUCTION}\n\n{_language_policy(output_language)}"
+        ),
+        contents=contents,
+        output_language=output_language,
+        prompt_version=REVISION_PROMPT_VERSION,
     )

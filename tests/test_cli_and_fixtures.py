@@ -8,8 +8,10 @@ from question_generation.cli import app
 from question_generation.config import DEFAULT_MODEL, DEFAULT_OUTPUT_LANGUAGE, load_settings
 from question_generation.errors import GenerationConfigurationError
 from question_generation.generation import FakeQuestionGenerator, generate_question
+from question_generation.input_adapter import load_question_spec
 from question_generation.schemas import (
     FixtureBundle,
+    GeneratedQuestion,
     HumanQuestionReview,
     ProviderQuestion,
     QuestionSpec,
@@ -223,6 +225,133 @@ def test_cli_writes_distinct_output_atomically(
     )
     assert len(fake.prompts) == 1
     assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []
+
+
+def test_cli_revises_from_explicit_feedback_without_overwriting_inputs(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    spec_path = tmp_path / "input.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    output_path = tmp_path / "revised.json"
+    write_spec(spec_path, vocabulary_spec)
+    loaded = load_question_spec(spec_path)
+    original_output = output_for(vocabulary_spec)
+    previous = generate_question(
+        vocabulary_spec,
+        artifact_hash=loaded.artifact_hash,
+        generator=FakeQuestionGenerator(original_output),
+    )
+    previous_path.write_text(previous.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    feedback_path.write_text("Clarify the standard definition.\n", encoding="utf-8")
+    revised_output = original_output.model_copy(
+        update={"stem": "Which option states the standard definition of a process?"}
+    )
+    fake = FakeQuestionGenerator(revised_output)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "question_generation.cli.GeminiQuestionGenerator",
+        lambda settings: fake,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--spec",
+            str(spec_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    revised = GeneratedQuestion.model_validate_json(output_path.read_text(encoding="utf-8"))
+    assert revised.prompt_version == "question-generation-revision-prompt-v1"
+    assert revised.generated_question_id != previous.generated_question_id
+    assert previous_path.exists()
+    assert feedback_path.read_text(encoding="utf-8") == "Clarify the standard definition.\n"
+    assert fake.prompts[0].prompt_version == "question-generation-revision-prompt-v1"
+
+
+def test_cli_revision_rejects_previous_output_collision_before_provider(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    spec_path = tmp_path / "input.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    write_spec(spec_path, vocabulary_spec)
+    loaded = load_question_spec(spec_path)
+    previous = generate_question(
+        vocabulary_spec,
+        artifact_hash=loaded.artifact_hash,
+        generator=FakeQuestionGenerator(output_for(vocabulary_spec)),
+    )
+    previous_path.write_text(previous.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    original = previous_path.read_bytes()
+    feedback_path.write_text("Clarify the standard definition.\n", encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def unexpected_generator(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider must not be constructed for a path collision")
+
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", unexpected_generator)
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--spec",
+            str(spec_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(previous_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "revision output path must differ from every input path" in result.output
+    assert previous_path.read_bytes() == original
+
+
+def test_cli_revision_rejects_malformed_previous_before_provider(
+    tmp_path: Path, monkeypatch, vocabulary_spec: QuestionSpec
+) -> None:
+    spec_path = tmp_path / "input.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    write_spec(spec_path, vocabulary_spec)
+    previous_path.write_text("{}\n", encoding="utf-8")
+    feedback_path.write_text("Clarify the standard definition.\n", encoding="utf-8")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def unexpected_generator(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider must not be constructed for malformed input")
+
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", unexpected_generator)
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--spec",
+            str(spec_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(tmp_path / "revised.json"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "invalid previous generated question" in result.output
 
 
 def test_cli_reports_atomic_output_write_failure(

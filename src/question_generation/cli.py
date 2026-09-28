@@ -10,9 +10,10 @@ import typer
 from question_generation.config import load_settings
 from question_generation.errors import InputContractError, QuestionGenerationError
 from question_generation.gemini import GeminiQuestionGenerator
-from question_generation.generation import generate_question
+from question_generation.generation import generate_question, revise_question
 from question_generation.input_adapter import LoadedQuestionSpec, load_question_spec
 from question_generation.prompt import build_prompt
+from question_generation.schemas import GeneratedQuestion
 from question_generation.validation import validate_supported_spec
 
 app = typer.Typer(
@@ -63,6 +64,24 @@ def _write_json_atomic(output: Path, content: str) -> None:
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def _load_previous_question(path: Path) -> GeneratedQuestion:
+    try:
+        return GeneratedQuestion.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise InputContractError(f"invalid previous generated question: {path.name}") from exc
+
+
+def _load_revision_feedback(path: Path) -> str:
+    try:
+        feedback = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise InputContractError(f"cannot read revision feedback: {path.name}") from exc
+    feedback = feedback.strip()
+    if not feedback:
+        raise InputContractError("revision feedback must be nonblank")
+    return feedback
 
 
 @app.command("render-prompt")
@@ -143,6 +162,63 @@ def generate(
                 f"input={question.usage.input_tokens}, "
                 f"output={question.usage.output_tokens}, total={question.usage.total_tokens}"
             )
+    except (QuestionGenerationError, ValueError) as exc:
+        _fail(exc)
+
+
+@app.command("revise")
+def revise(
+    previous: Annotated[
+        Path,
+        typer.Option("--previous", exists=True, dir_okay=False, readable=True),
+    ],
+    feedback_file: Annotated[
+        Path,
+        typer.Option("--feedback-file", exists=True, dir_okay=False, readable=True),
+    ],
+    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
+    blueprint: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
+    spec: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
+    question_id: Annotated[str | None, typer.Option("--question-id")] = None,
+) -> None:
+    """Revise one generated question from explicit feedback and revalidate it."""
+
+    try:
+        loaded = _load_input(blueprint, spec, question_id)
+        validate_supported_spec(loaded.spec)
+        previous_question = _load_previous_question(previous)
+        feedback = _load_revision_feedback(feedback_file)
+        resolved_output = output.resolve()
+        protected_inputs = {
+            loaded.artifact_path.resolve(),
+            previous.resolve(),
+            feedback_file.resolve(),
+        }
+        if resolved_output in protected_inputs:
+            raise InputContractError("revision output path must differ from every input path")
+        settings = load_settings(require_api_key=True)
+        generator = GeminiQuestionGenerator(settings)
+        question = revise_question(
+            loaded.spec,
+            artifact_hash=loaded.artifact_hash,
+            previous=previous_question,
+            feedback=feedback,
+            generator=generator,
+            output_language=settings.output_language,
+        )
+        try:
+            _write_json_atomic(
+                resolved_output,
+                json.dumps(question.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
+            )
+        except OSError as exc:
+            raise InputContractError("could not write revised question output") from exc
+        typer.secho("Revised and validated one question.", fg=typer.colors.GREEN)
+        typer.echo(f"ID: {question.generated_question_id}")
+        typer.echo(f"Source: {previous_question.generated_question_id}")
+        typer.echo(f"Target: {question.question_type} / {question.primary_concept}")
+        typer.echo(f"Model: {question.generation_model}")
+        typer.echo(f"Output: {resolved_output}")
     except (QuestionGenerationError, ValueError) as exc:
         _fail(exc)
 
