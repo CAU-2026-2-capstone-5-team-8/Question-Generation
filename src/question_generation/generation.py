@@ -16,6 +16,7 @@ from question_generation.errors import InputContractError
 from question_generation.prompt import (
     PromptPayload,
     build_display_grounded_prompt,
+    build_display_grounded_revision_prompt,
     build_grounded_prompt,
     build_grounded_revision_prompt,
     build_prompt,
@@ -141,6 +142,27 @@ def generate_display_grounded_question(
         canonical_file_hashes=canonical_file_hashes,
     )
     prompt = build_display_grounded_prompt(spec, grounding, output_language=output_language)
+    return _generate_display_grounded_from_prompt(
+        spec,
+        grounding=grounding,
+        grounding_artifact_hash=grounding_artifact_hash,
+        passage=grounding.display_passage_text,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
+    )
+
+
+def _generate_display_grounded_from_prompt(
+    spec: QuestionSpec,
+    *,
+    grounding: GenerationGroundingV2,
+    grounding_artifact_hash: str,
+    passage: str,
+    generator: QuestionGenerator,
+    prompt: PromptPayload,
+    output_language: str,
+) -> GeneratedQuestionV4:
     provider = generator.generate(prompt)
     validate_provider_question(provider.output, spec, grounding=grounding)
 
@@ -157,7 +179,7 @@ def generate_display_grounded_question(
         "target_difficulty": spec.target_difficulty,
         "difficulty_rationale": spec.difficulty_rationale,
         "evidence_summary": spec.evidence_summary,
-        "passage": grounding.display_passage_text,
+        "passage": passage,
         "stem": provider.output.stem,
         "choices": provider.output.choices,
         "correct_choice_index": provider.output.correct_choice_index,
@@ -188,7 +210,7 @@ def generate_display_grounded_question(
 
 def _validate_revision_source(
     spec: QuestionSpec,
-    previous: GeneratedQuestion,
+    previous: GeneratedQuestion | GeneratedQuestionV4,
     *,
     artifact_hash: str,
     output_language: str,
@@ -305,6 +327,70 @@ def revise_grounded_question(
         output_language=output_language,
         generated_question_version=GROUNDED_GENERATED_QUESTION_VERSION,
         grounding=grounding,
+    )
+
+
+def revise_display_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGroundingV2,
+    grounding_artifact_hash: str,
+    previous: GeneratedQuestion | GeneratedQuestionV4,
+    feedback: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestionV4:
+    """Revise v4 output while preserving its validated display passage and provenance."""
+
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
+    if previous.generated_question_version != DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION:
+        raise InputContractError("display-grounded revision requires generated-question-v4 input")
+    if not isinstance(previous, GeneratedQuestionV4):
+        raise InputContractError("invalid generated-question-v4 revision input")
+    _validate_revision_source(
+        spec,
+        previous,
+        artifact_hash=grounding_artifact_hash,
+        output_language=output_language,
+    )
+    expected_grounding = {
+        "grounding_version": grounding.grounding_version,
+        "source_passage_extraction_policy": grounding.source_passage_extraction_policy,
+        "source_passage_hash": grounding.source_passage_hash,
+        "display_passage_hash": grounding.display_passage_hash,
+        "display_normalization_policy": grounding.display_normalization_policy,
+        "source_document_ids": [grounding.source_document_id],
+        "passage": grounding.display_passage_text,
+    }
+    grounding_mismatches = [
+        name for name, value in expected_grounding.items() if getattr(previous, name) != value
+    ]
+    if grounding_mismatches:
+        raise InputContractError(
+            "previous question does not match display grounding: " + ", ".join(grounding_mismatches)
+        )
+    prompt = build_display_grounded_revision_prompt(
+        spec,
+        grounding,
+        previous,
+        feedback,
+        output_language=output_language,
+    )
+    return _generate_display_grounded_from_prompt(
+        spec,
+        grounding=grounding,
+        grounding_artifact_hash=grounding_artifact_hash,
+        passage=previous.passage,
+        generator=generator,
+        prompt=prompt,
+        output_language=output_language,
     )
 
 

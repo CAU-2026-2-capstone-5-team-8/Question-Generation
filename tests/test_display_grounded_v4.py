@@ -13,11 +13,16 @@ from question_generation.errors import GeneratedQuestionValidationError, InputCo
 from question_generation.generation import (
     FakeQuestionGenerator,
     generate_display_grounded_question,
+    revise_display_grounded_question,
 )
 from question_generation.input_adapter import load_generation_grounding, load_question_spec
-from question_generation.prompt import build_display_grounded_prompt
+from question_generation.prompt import (
+    build_display_grounded_prompt,
+    build_display_grounded_revision_prompt,
+)
 from question_generation.schemas import (
     AssessmentEvidenceRef,
+    GeneratedQuestion,
     GeneratedQuestionV4,
     GenerationGroundingV2,
     ProviderQuestion,
@@ -197,6 +202,25 @@ def _write_blueprint(path: Path, spec: QuestionSpec) -> None:
     )
 
 
+def _previous_v4(
+    spec: QuestionSpec | None = None,
+    grounding: GenerationGroundingV2 | None = None,
+    *,
+    blueprint_hash: str = HASH,
+    grounding_artifact_hash: str = GROUNDING_ARTIFACT_HASH,
+) -> GeneratedQuestionV4:
+    target = spec or _spec()
+    bound_grounding = grounding or _grounding(target, blueprint_hash=blueprint_hash)
+    return generate_display_grounded_question(
+        target,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=CANONICAL_HASHES,
+        grounding=bound_grounding,
+        grounding_artifact_hash=grounding_artifact_hash,
+        generator=FakeQuestionGenerator(_provider(target)),
+    )
+
+
 def test_v4_prompt_uses_display_text_and_retains_raw_provenance_hash() -> None:
     prompt = build_display_grounded_prompt(_spec(), _grounding())
     rendered = prompt.render()
@@ -318,3 +342,222 @@ def test_cli_dry_run_accepts_v2_without_key_or_provider_call(tmp_path: Path) -> 
     assert "question-generation-grounded-prompt-v4" in result.output
     assert json.dumps(DISPLAY_PASSAGE, ensure_ascii=False) in result.output
     assert json.dumps(SOURCE_PASSAGE, ensure_ascii=False) not in result.output
+
+
+def test_v4_revision_prompt_uses_display_passage_and_distractor_requirements() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_v4(spec, grounding)
+    feedback = "Replace the unnatural distractor with a plausible misconception."
+
+    prompt = build_display_grounded_revision_prompt(spec, grounding, previous, feedback)
+    rendered = prompt.render()
+    normalized = " ".join(rendered.split())
+
+    assert prompt.prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+    assert rendered.count(json.dumps(DISPLAY_PASSAGE, ensure_ascii=False)) == 1
+    assert json.dumps(SOURCE_PASSAGE, ensure_ascii=False) not in rendered
+    assert previous.generated_question_id in rendered
+    assert feedback in rendered
+    assert "preserve the validated passage byte-for-byte" in normalized
+    assert "typo, nonsense word, broken grammar" in normalized
+    assert "plausible misconception" in normalized
+
+
+def test_v4_revision_preserves_passage_and_provenance_with_new_id() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_v4(spec, grounding)
+    revised_output = _provider(spec).model_copy(
+        update={
+            "stem": "4개의 행과 5개의 열을 가진 배열의 올바른 행렬 크기 표기는 무엇인가?",
+            "choices": [
+                "4×5 행렬",
+                "5×4 행렬",
+                "4×4 행렬",
+                "5×5 행렬",
+            ],
+            "correct_choice_index": 0,
+            "explanation": "지문은 행의 수를 먼저 쓰므로 4×5 행렬이다.",
+        }
+    )
+    fake = FakeQuestionGenerator(revised_output)
+
+    revised = revise_display_grounded_question(
+        spec,
+        blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
+        grounding=grounding,
+        grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+        previous=previous,
+        feedback="Use only natural, plausible distractors.",
+        generator=fake,
+    )
+
+    assert revised.generated_question_version == "generated-question-v4"
+    assert revised.prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+    assert revised.generated_question_id != previous.generated_question_id
+    assert revised.passage.encode() == previous.passage.encode()
+    assert revised.question_spec_id == previous.question_spec_id
+    assert revised.source_document_ids == previous.source_document_ids
+    assert revised.source_passage_hash == previous.source_passage_hash
+    assert revised.display_passage_hash == previous.display_passage_hash
+    assert revised.display_normalization_policy == previous.display_normalization_policy
+    assert revised.input_artifact_hash == previous.input_artifact_hash
+    assert DISPLAY_PASSAGE not in revised.stem
+    assert len(fake.prompts) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("generated_question_version", "generated-question-v3", "generated-question-v4"),
+        ("question_spec_id", "q_" + "0" * 20, "revision target"),
+        ("passage", DISPLAY_PASSAGE + " altered", "display grounding"),
+        ("display_passage_hash", HASH, "display grounding"),
+        ("source_passage_hash", HASH, "display grounding"),
+        ("display_normalization_policy", "pdf-display-normalization-v2", "display grounding"),
+        ("input_artifact_hash", HASH, "revision target"),
+        ("source_document_ids", ["doc_other"], "revision target"),
+    ],
+)
+def test_v4_revision_rejects_previous_mismatch_before_provider(
+    field: str, value: object, message: str
+) -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_v4(spec, grounding).model_copy(update={field: value})
+    fake = FakeQuestionGenerator(_provider(spec))
+
+    with pytest.raises(InputContractError, match=message):
+        revise_display_grounded_question(
+            spec,
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+            grounding=grounding,
+            grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+            previous=previous,
+            feedback="Improve distractor quality.",
+            generator=fake,
+        )
+
+    assert fake.prompts == []
+
+
+def test_v4_revision_rejects_v3_previous_before_provider() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous_v4 = _previous_v4(spec, grounding)
+    previous_v3 = GeneratedQuestion.model_construct(
+        **previous_v4.model_dump(exclude={"passage", "generated_question_version"}),
+        generated_question_version="generated-question-v3",
+    )
+    fake = FakeQuestionGenerator(_provider(spec))
+
+    with pytest.raises(InputContractError, match="generated-question-v4"):
+        revise_display_grounded_question(
+            spec,
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+            grounding=grounding,
+            grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+            previous=previous_v3,
+            feedback="Improve distractor quality.",
+            generator=fake,
+        )
+
+    assert fake.prompts == []
+
+
+@pytest.mark.parametrize(
+    ("provider_update", "message"),
+    [
+        ({"primary_concept": "vector"}, "authoritative QuestionSpec"),
+        (
+            {"choices": ["같은 선택지", "같은 선택지", "다른 선택지", "또 다른 선택지"]},
+            "choices must be unique",
+        ),
+        ({"stem": f"{DISPLAY_PASSAGE}\n\n질문"}, "complete grounding passage"),
+    ],
+)
+def test_v4_revision_rejects_invalid_provider_output(
+    provider_update: dict[str, object], message: str
+) -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    fake = FakeQuestionGenerator(_provider(spec).model_copy(update=provider_update))
+
+    with pytest.raises(GeneratedQuestionValidationError, match=message):
+        revise_display_grounded_question(
+            spec,
+            blueprint_hash=HASH,
+            canonical_file_hashes=CANONICAL_HASHES,
+            grounding=grounding,
+            grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+            previous=_previous_v4(spec, grounding),
+            feedback="Improve distractor quality.",
+            generator=fake,
+        )
+
+
+def test_cli_revises_v4_without_overwriting_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = _spec()
+    blueprint_path = tmp_path / "blueprint.json"
+    grounding_path = tmp_path / "grounding.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    output_path = tmp_path / "revised.json"
+    _write_blueprint(blueprint_path, spec)
+    loaded = load_question_spec(blueprint_path, question_id=spec.question_id)
+    grounding = _grounding(spec, blueprint_hash=loaded.artifact_hash)
+    grounding_path.write_text(grounding.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    loaded_grounding = load_generation_grounding(grounding_path)
+    previous = _previous_v4(
+        spec,
+        grounding,
+        blueprint_hash=loaded.artifact_hash,
+        grounding_artifact_hash=loaded_grounding.artifact_hash,
+    )
+    previous_path.write_text(previous.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    feedback_path.write_text("Use natural, plausible distractors.\n", encoding="utf-8")
+    previous_bytes = previous_path.read_bytes()
+    grounding_bytes = grounding_path.read_bytes()
+    fake = FakeQuestionGenerator(
+        _provider(spec).model_copy(
+            update={"stem": "4행 5열 행렬의 크기를 올바르게 표기한 것은 무엇인가?"}
+        )
+    )
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", lambda settings: fake)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--blueprint",
+            str(blueprint_path),
+            "--question-id",
+            spec.question_id,
+            "--grounding",
+            str(grounding_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    revised = GeneratedQuestionV4.model_validate_json(output_path.read_text(encoding="utf-8"))
+    assert revised.generated_question_id != previous.generated_question_id
+    assert revised.passage.encode() == previous.passage.encode()
+    assert previous_path.read_bytes() == previous_bytes
+    assert grounding_path.read_bytes() == grounding_bytes
+    assert (
+        fake.prompts[0].prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+    )
+    assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []

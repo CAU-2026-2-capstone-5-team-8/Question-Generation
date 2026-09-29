@@ -16,6 +16,9 @@ LINEAR_ALGEBRA_REVIEW_FILE = (
 GROUNDED_COMPREHENSION_REVIEW_FILE = (
     ROOT / "reviews" / "linear-algebra-grounded-comprehension-v1.jsonl"
 )
+DISPLAY_GROUNDED_COMPREHENSION_REVIEW_FILE = (
+    ROOT / "reviews" / "linear-algebra-display-grounded-comprehension-v1.jsonl"
+)
 
 
 def test_os_reviewed_question_generation_human_qa_is_complete() -> None:
@@ -85,6 +88,28 @@ def test_grounded_comprehension_human_review_is_recorded_exactly() -> None:
         "위치에 적용해야 풀 수 있도록 수정이 필요하다. 또한 grounding passage에 PDF text "
         "extraction으로 인한 공백 및 문자 결합 오류가 다수 존재하여 사용자 표시 품질 개선을 후속 "
         "검토해야 한다."
+    )
+
+
+def test_display_grounded_comprehension_human_review_is_recorded_exactly() -> None:
+    reviews = load_review_jsonl(DISPLAY_GROUNDED_COMPREHENSION_REVIEW_FILE)
+
+    assert len(reviews) == 1
+    review = reviews[0]
+    assert review.generated_question_id == "gq_c0e6f6c774e467bcb8ab2c10a4cd9379"
+    assert review.correct is True
+    assert review.concept_alignment == 5
+    assert review.difficulty_appropriate is True
+    assert review.distractor_quality == 3
+    assert review.explanation_quality == 5
+    assert review.status == "needs_revision"
+    assert review.notes == (
+        "display passage는 raw source의 의미와 행렬 구조를 보존하면서 PDF 추출 오류를 충분히 "
+        "개선했다. 문항은 passage의 2×3 예시를 그대로 대조하는 대신 4행 5열이라는 새로운 상황에 "
+        "행 우선 표기 규칙을 적용해야 하므로 comprehension/apply/Level 2 목적에 적절하다. 정답과 "
+        "해설도 passage에 근거해 정확하다. 다만 선택지 A의 '오브젝트-포(five-by-four)' 표현은 "
+        "자연스럽지 않고 오답 단서를 과도하게 제공하여 distractor 품질을 저하시킨다. 선택지 간 "
+        "오개념을 더 자연스럽고 서로 다른 형태로 구성한 뒤 재검토하는 것이 적절하다."
     )
 
 
