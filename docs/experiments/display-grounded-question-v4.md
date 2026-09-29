@@ -63,8 +63,10 @@ The output also retains:
 
 The deterministic question ID covers the separate passage, question output, target identity, input
 artifact hash, and display provenance. Provider token usage remains excluded, matching the existing
-ID policy. The output schema re-hashes `passage` and rejects any mismatch with
-`display_passage_hash`.
+ID policy. The output schema re-hashes `passage`, recomputes the v4 deterministic ID, and rejects
+either mismatch. A future Backend reader must still compare the provenance fields with the exact
+grounding artifact rather than treating the output schema alone as proof of external source
+lineage.
 
 ## Actual offline dry run
 

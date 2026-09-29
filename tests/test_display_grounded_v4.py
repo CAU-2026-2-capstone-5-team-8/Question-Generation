@@ -284,6 +284,11 @@ def test_v4_contract_rejects_passage_hash_mismatch() -> None:
     with pytest.raises(ValidationError, match="display passage hash"):
         GeneratedQuestionV4.model_validate(payload)
 
+    id_payload = question.model_dump(mode="json")
+    id_payload["generated_question_id"] = "gq_" + "0" * 32
+    with pytest.raises(ValidationError, match="generated question ID"):
+        GeneratedQuestionV4.model_validate(id_payload)
+
 
 def test_cli_dry_run_accepts_v2_without_key_or_provider_call(tmp_path: Path) -> None:
     spec = _spec()

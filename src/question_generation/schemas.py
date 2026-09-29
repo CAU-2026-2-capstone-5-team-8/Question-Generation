@@ -1,6 +1,7 @@
 """Versioned input, provider-output, final-output, and review contracts."""
 
 import hashlib
+import json
 import re
 from typing import Any, Literal
 
@@ -569,6 +570,19 @@ class GeneratedQuestionV4(StrictModel):
         actual_display_hash = "sha256:" + hashlib.sha256(self.passage.encode("utf-8")).hexdigest()
         if self.display_passage_hash != actual_display_hash:
             raise ValueError("display passage hash does not match passage")
+        identity_and_output = self.model_dump(
+            mode="json",
+            exclude={"generated_question_id", "usage"},
+        )
+        canonical = json.dumps(
+            identity_and_output,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        expected_id = "gq_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+        if self.generated_question_id != expected_id:
+            raise ValueError("generated question ID does not match v4 identity and output")
         return self
 
 
