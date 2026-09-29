@@ -9,7 +9,12 @@ from question_generation.errors import (
     GeneratedQuestionValidationError,
     UnsupportedQuestionSpecError,
 )
-from question_generation.schemas import GenerationGrounding, ProviderQuestion, QuestionSpec
+from question_generation.schemas import (
+    GenerationGrounding,
+    GenerationGroundingV2,
+    ProviderQuestion,
+    QuestionSpec,
+)
 
 _PLACEHOLDER = re.compile(
     r"(?:\bTODO\b|\bTBD\b|\bFIXME\b|\[insert\b|\{\{.+?\}\}|<placeholder>)",
@@ -92,7 +97,7 @@ def _question_spec_hash(spec: QuestionSpec) -> str:
 
 
 def validate_grounding_for_spec(
-    grounding: GenerationGrounding,
+    grounding: GenerationGrounding | GenerationGroundingV2,
     spec: QuestionSpec,
     *,
     blueprint_hash: str,
@@ -157,7 +162,7 @@ def validate_provider_question(
     output: ProviderQuestion,
     spec: QuestionSpec,
     *,
-    grounding: GenerationGrounding | None = None,
+    grounding: GenerationGrounding | GenerationGroundingV2 | None = None,
 ) -> None:
     """Validate structured syntax plus meaning that JSON Schema cannot guarantee."""
 
@@ -185,9 +190,12 @@ def validate_provider_question(
             "provider output changed authoritative QuestionSpec fields: " + ", ".join(mismatches)
         )
 
-    if grounding is not None and normalize_text(grounding.passage_text) in normalize_text(
-        output.stem
-    ):
+    passage_text = None
+    if isinstance(grounding, GenerationGrounding):
+        passage_text = grounding.passage_text
+    elif isinstance(grounding, GenerationGroundingV2):
+        passage_text = grounding.display_passage_text
+    if passage_text is not None and normalize_text(passage_text) in normalize_text(output.stem):
         raise GeneratedQuestionValidationError(
             "provider stem must not repeat the complete grounding passage"
         )

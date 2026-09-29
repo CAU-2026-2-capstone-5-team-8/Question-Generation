@@ -5,12 +5,18 @@ from dataclasses import dataclass
 
 from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
+    DISPLAY_GROUNDED_PROMPT_VERSION,
     GROUNDED_PROMPT_VERSION,
     GROUNDED_REVISION_PROMPT_VERSION,
     PROMPT_VERSION,
     REVISION_PROMPT_VERSION,
 )
-from question_generation.schemas import GeneratedQuestion, GenerationGrounding, QuestionSpec
+from question_generation.schemas import (
+    GeneratedQuestion,
+    GenerationGrounding,
+    GenerationGroundingV2,
+    QuestionSpec,
+)
 
 
 @dataclass(frozen=True)
@@ -167,6 +173,43 @@ def build_grounded_prompt(
         contents=contents,
         output_language=output_language,
         prompt_version=GROUNDED_PROMPT_VERSION,
+    )
+
+
+def build_display_grounded_prompt(
+    spec: QuestionSpec,
+    grounding: GenerationGroundingV2,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render the reviewed display passage while retaining raw-source provenance hashes."""
+
+    context = {
+        "authoritative_target": _audit_context(spec, output_language),
+        "grounding": {
+            "grounding_version": grounding.grounding_version,
+            "source_document_id": grounding.source_document_id,
+            "document_content_hash": grounding.document_content_hash,
+            "source_passage_extraction_policy": grounding.source_passage_extraction_policy,
+            "source_passage_hash": grounding.source_passage_hash,
+            "display_normalization_policy": grounding.display_normalization_policy,
+            "display_passage_hash": grounding.display_passage_hash,
+            "display_passage_text": grounding.display_passage_text,
+        },
+    }
+    contents = (
+        "Generate exactly one question for the authoritative target. Echo all target identity "
+        "fields exactly and ground the answer only in grounding.display_passage_text. The display "
+        "passage is a deterministic, semantics-preserving representation of the hash-bound source "
+        "passage.\n\n" + json.dumps(context, ensure_ascii=False, sort_keys=True, indent=2)
+    )
+    return PromptPayload(
+        system_instruction=(
+            f"{GROUNDED_SYSTEM_INSTRUCTION}\n\n{_language_policy(output_language)}"
+        ),
+        contents=contents,
+        output_language=output_language,
+        prompt_version=DISPLAY_GROUNDED_PROMPT_VERSION,
     )
 
 

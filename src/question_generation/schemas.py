@@ -237,6 +237,121 @@ class GenerationGrounding(StrictModel):
         return self
 
 
+_REVIEWED_DISPLAY_REPLACEMENTS = {
+    (
+        "doc_de934d33d551223812e8",
+        "sha256:7220ee5501766f97edabc506e871470356fa2aeb40ec92acfd6f7e44d9ce4ce0",
+    ): (
+        ("DeﬁnitionAnm×n", "Definition An m×n"),
+        ("withm rows\nandn columns", "with m rows\nand n columns"),
+        ("anentry", "an entry"),
+        (
+            "has2 rows and3 columns and so is a2×3 matrix",
+            "has 2 rows and 3 columns and so is a 2×3 matrix",
+        ),
+        ("two-by-\nthree", "two-by-three"),
+        ("isa2,1 =3", "is a2,1 = 3"),
+    ),
+}
+
+
+def _reviewed_display_passage(
+    source_passage_text: str,
+    *,
+    source_document_id: str,
+    source_passage_hash: str,
+) -> str:
+    actual_hash = "sha256:" + hashlib.sha256(source_passage_text.encode("utf-8")).hexdigest()
+    if source_passage_hash != actual_hash:
+        raise ValueError("source passage hash does not match source passage text")
+    replacements = _REVIEWED_DISPLAY_REPLACEMENTS.get((source_document_id, source_passage_hash))
+    if replacements is None:
+        raise ValueError("display policy has no reviewed rules for this source passage")
+    display_passage = source_passage_text
+    for original, replacement in replacements:
+        if display_passage.count(original) != 1:
+            raise ValueError("reviewed display policy input does not match its source fragment")
+        display_passage = display_passage.replace(original, replacement, 1)
+    return display_passage
+
+
+class GenerationGroundingV2(StrictModel):
+    """Local copy of ML's source/display-separated generation-grounding-v2 contract."""
+
+    schema_version: Literal[2]
+    grounding_version: Literal["generation-grounding-v2"]
+    question_spec_id: str = Field(pattern=r"^q_[0-9a-f]{20}$")
+    question_spec_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    topic_id: str
+    question_type: Literal["comprehension"]
+    cognitive_operation: Literal["apply"]
+    target_difficulty: Literal[2]
+    primary_concept: str
+    related_concepts: list[str]
+    source_document_id: str
+    book_id: str
+    document_type: Literal["preface", "introduction", "preview", "sample_chapter", "other"]
+    document_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_passage_text: str = Field(min_length=600, max_length=1800)
+    source_passage_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_passage_extraction_policy: Literal["first-concept-sentence-window-v1"]
+    display_passage_text: str = Field(min_length=600, max_length=2000)
+    display_passage_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    display_normalization_policy: Literal["pdf-display-normalization-v1"]
+    source_id: str
+    provider: str
+    source_type: str
+    source_url: str
+    source_retrieved_at: str
+    license: str
+    rights_note: str | None = None
+    source_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    edition_relation: Literal["exact", "same_work", "unspecified"]
+    canonical_file_hashes: dict[str, str]
+    blueprint_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    _validate_strings = field_validator(
+        "topic_id",
+        "primary_concept",
+        "source_document_id",
+        "book_id",
+        "source_id",
+        "provider",
+        "source_type",
+        "source_url",
+        "source_retrieved_at",
+        "license",
+    )(_nonblank)
+
+    @field_validator("canonical_file_hashes")
+    @classmethod
+    def canonical_hashes_must_cover_exact_inputs(cls, value: dict[str, str]) -> dict[str, str]:
+        required = {"books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl"}
+        if set(value) != required or any(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None for digest in value.values()
+        ):
+            raise ValueError("canonical file hashes must cover all four JSONL inputs")
+        return value
+
+    @model_validator(mode="after")
+    def source_display_and_target_must_be_consistent(self) -> "GenerationGroundingV2":
+        expected_display = _reviewed_display_passage(
+            self.source_passage_text,
+            source_document_id=self.source_document_id,
+            source_passage_hash=self.source_passage_hash,
+        )
+        if self.display_passage_text != expected_display:
+            raise ValueError("display passage does not match the deterministic display policy")
+        display_hash = (
+            "sha256:" + hashlib.sha256(self.display_passage_text.encode("utf-8")).hexdigest()
+        )
+        if self.display_passage_hash != display_hash:
+            raise ValueError("display passage hash does not match display passage text")
+        if self.related_concepts:
+            raise ValueError("generation-grounding-v2 supports only single-concept apply targets")
+        return self
+
+
 class ProviderQuestion(StrictModel):
     """The only schema Gemini is allowed to return."""
 
@@ -364,6 +479,94 @@ class GeneratedQuestion(StrictModel):
                 raise ValueError("generated-question-v3 supports only grounded comprehension/apply")
         else:
             raise ValueError("unsupported generated_question_version")
+        return self
+
+
+class GeneratedQuestionV4(StrictModel):
+    """Display-grounded question with passage and question text in separate fields."""
+
+    generated_question_id: str = Field(pattern=r"^gq_[0-9a-f]{32}$")
+    generated_question_version: Literal["generated-question-v4"]
+    question_spec_id: str = Field(pattern=r"^q_[0-9a-f]{20}$")
+    topic_id: str
+    question_type: Literal["comprehension"]
+    cognitive_operation: Literal["apply"]
+    primary_concept: str
+    related_concepts: list[str]
+    prerequisite_concepts: list[str]
+    target_difficulty: Literal[2]
+    difficulty_rationale: str
+    evidence_summary: str
+    passage: str = Field(min_length=600, max_length=2000)
+    stem: str
+    choices: list[str] = Field(min_length=4, max_length=4)
+    correct_choice_index: int = Field(ge=0, le=3)
+    explanation: str
+    generation_model: str
+    output_language: str
+    prompt_version: str
+    generation_config_version: str
+    question_spec_version: str
+    question_spec_config_version: str
+    question_spec_config_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    supporting_book_ids: list[str]
+    supporting_evidence_ids: list[str]
+    source_document_ids: list[str] = Field(min_length=1, max_length=1)
+    grounding_version: Literal["generation-grounding-v2"]
+    source_passage_extraction_policy: Literal["first-concept-sentence-window-v1"]
+    source_passage_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    display_passage_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    display_normalization_policy: Literal["pdf-display-normalization-v1"]
+    input_artifact_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    usage: TokenUsage
+
+    _validate_strings = field_validator(
+        "topic_id",
+        "primary_concept",
+        "difficulty_rationale",
+        "evidence_summary",
+        "passage",
+        "stem",
+        "explanation",
+        "generation_model",
+        "output_language",
+        "prompt_version",
+        "generation_config_version",
+        "question_spec_version",
+        "question_spec_config_version",
+    )(_nonblank)
+
+    @field_validator(
+        "related_concepts",
+        "prerequisite_concepts",
+        "choices",
+        "supporting_book_ids",
+        "supporting_evidence_ids",
+        "source_document_ids",
+    )
+    @classmethod
+    def output_lists_must_contain_nonblank_strings(cls, values: list[str]) -> list[str]:
+        for value in values:
+            _nonblank(value)
+        return values
+
+    @model_validator(mode="after")
+    def display_grounding_and_provenance_must_be_consistent(self) -> "GeneratedQuestionV4":
+        normalized = [" ".join(value.casefold().split()) for value in self.choices]
+        if len(set(normalized)) != 4:
+            raise ValueError("choices must be unique after normalization")
+        for values, label in (
+            (self.supporting_book_ids, "supporting_book_ids"),
+            (self.supporting_evidence_ids, "supporting_evidence_ids"),
+            (self.source_document_ids, "source_document_ids"),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"{label} must be unique")
+        if self.related_concepts:
+            raise ValueError("generated-question-v4 supports one non-relational concept")
+        actual_display_hash = "sha256:" + hashlib.sha256(self.passage.encode("utf-8")).hexdigest()
+        if self.display_passage_hash != actual_display_hash:
+            raise ValueError("display passage hash does not match passage")
         return self
 
 

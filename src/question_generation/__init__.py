@@ -3,6 +3,8 @@
 from question_generation.config import (
     DEFAULT_MODEL,
     DEFAULT_OUTPUT_LANGUAGE,
+    DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION,
+    DISPLAY_GROUNDED_PROMPT_VERSION,
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
     GROUNDED_GENERATED_QUESTION_VERSION,
@@ -10,11 +12,19 @@ from question_generation.config import (
     PROMPT_VERSION,
     REVISION_PROMPT_VERSION,
 )
-from question_generation.schemas import GeneratedQuestion, GenerationGrounding, QuestionSpec
+from question_generation.schemas import (
+    GeneratedQuestion,
+    GeneratedQuestionV4,
+    GenerationGrounding,
+    GenerationGroundingV2,
+    QuestionSpec,
+)
 
 __all__ = [
     "DEFAULT_MODEL",
     "DEFAULT_OUTPUT_LANGUAGE",
+    "DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION",
+    "DISPLAY_GROUNDED_PROMPT_VERSION",
     "GENERATED_QUESTION_VERSION",
     "GENERATION_CONFIG_VERSION",
     "GROUNDED_GENERATED_QUESTION_VERSION",
@@ -22,6 +32,8 @@ __all__ = [
     "PROMPT_VERSION",
     "REVISION_PROMPT_VERSION",
     "GeneratedQuestion",
+    "GeneratedQuestionV4",
     "GenerationGrounding",
+    "GenerationGroundingV2",
     "QuestionSpec",
 ]

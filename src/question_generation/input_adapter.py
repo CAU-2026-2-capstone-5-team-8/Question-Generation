@@ -13,6 +13,7 @@ from question_generation.errors import InputContractError
 from question_generation.schemas import (
     AssessmentBlueprintEnvelope,
     GenerationGrounding,
+    GenerationGroundingV2,
     QuestionSpec,
 )
 
@@ -27,7 +28,7 @@ class LoadedQuestionSpec:
 
 @dataclass(frozen=True)
 class LoadedGenerationGrounding:
-    grounding: GenerationGrounding
+    grounding: GenerationGrounding | GenerationGroundingV2
     artifact_hash: str
     artifact_path: Path
 
@@ -87,11 +88,17 @@ def load_question_spec(path: Path, *, question_id: str | None = None) -> LoadedQ
 
 
 def load_generation_grounding(path: Path) -> LoadedGenerationGrounding:
-    """Load one strict generation-grounding-v1 artifact and hash its exact bytes."""
+    """Load one supported grounding artifact and hash its exact bytes."""
 
     payload, content = _read_json(path)
     try:
-        grounding = GenerationGrounding.model_validate(payload)
+        grounding_version = payload.get("grounding_version")
+        if grounding_version == "generation-grounding-v1":
+            grounding = GenerationGrounding.model_validate(payload)
+        elif grounding_version == "generation-grounding-v2":
+            grounding = GenerationGroundingV2.model_validate(payload)
+        else:
+            raise InputContractError(f"unsupported grounding_version: {grounding_version!r}")
     except ValidationError as exc:
         raise InputContractError(f"grounding contract validation failed: {exc}") from exc
     return LoadedGenerationGrounding(

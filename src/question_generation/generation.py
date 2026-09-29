@@ -7,6 +7,7 @@ from typing import Protocol
 
 from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
+    DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION,
     GENERATED_QUESTION_VERSION,
     GENERATION_CONFIG_VERSION,
     GROUNDED_GENERATED_QUESTION_VERSION,
@@ -14,6 +15,7 @@ from question_generation.config import (
 from question_generation.errors import InputContractError
 from question_generation.prompt import (
     PromptPayload,
+    build_display_grounded_prompt,
     build_grounded_prompt,
     build_grounded_revision_prompt,
     build_prompt,
@@ -21,7 +23,9 @@ from question_generation.prompt import (
 )
 from question_generation.schemas import (
     GeneratedQuestion,
+    GeneratedQuestionV4,
     GenerationGrounding,
+    GenerationGroundingV2,
     ProviderQuestion,
     QuestionSpec,
     TokenUsage,
@@ -115,6 +119,70 @@ def generate_grounded_question(
         output_language=output_language,
         generated_question_version=GROUNDED_GENERATED_QUESTION_VERSION,
         grounding=grounding,
+    )
+
+
+def generate_display_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGroundingV2,
+    grounding_artifact_hash: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestionV4:
+    """Generate a v4 question with display passage and question text kept separate."""
+
+    validate_grounding_for_spec(
+        grounding,
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+    )
+    prompt = build_display_grounded_prompt(spec, grounding, output_language=output_language)
+    provider = generator.generate(prompt)
+    validate_provider_question(provider.output, spec, grounding=grounding)
+
+    evidence_ids = list(dict.fromkeys(item.evidence_id for item in spec.supporting_evidence))
+    identity_and_output: dict[str, object] = {
+        "generated_question_version": DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION,
+        "question_spec_id": spec.question_id,
+        "topic_id": spec.topic_id,
+        "question_type": spec.question_type,
+        "cognitive_operation": spec.cognitive_operation,
+        "primary_concept": spec.primary_concept,
+        "related_concepts": spec.related_concepts,
+        "prerequisite_concepts": spec.prerequisite_concepts,
+        "target_difficulty": spec.target_difficulty,
+        "difficulty_rationale": spec.difficulty_rationale,
+        "evidence_summary": spec.evidence_summary,
+        "passage": grounding.display_passage_text,
+        "stem": provider.output.stem,
+        "choices": provider.output.choices,
+        "correct_choice_index": provider.output.correct_choice_index,
+        "explanation": provider.output.explanation,
+        "generation_model": provider.model,
+        "output_language": output_language,
+        "prompt_version": prompt.prompt_version,
+        "generation_config_version": GENERATION_CONFIG_VERSION,
+        "question_spec_version": spec.question_spec_version,
+        "question_spec_config_version": spec.config_version,
+        "question_spec_config_hash": spec.config_hash,
+        "supporting_book_ids": spec.supporting_book_ids,
+        "supporting_evidence_ids": evidence_ids,
+        "source_document_ids": spec.source_document_ids,
+        "grounding_version": grounding.grounding_version,
+        "source_passage_extraction_policy": grounding.source_passage_extraction_policy,
+        "source_passage_hash": grounding.source_passage_hash,
+        "display_passage_hash": grounding.display_passage_hash,
+        "display_normalization_policy": grounding.display_normalization_policy,
+        "input_artifact_hash": grounding_artifact_hash,
+    }
+    return GeneratedQuestionV4(
+        generated_question_id=_generated_id(identity_and_output),
+        **identity_and_output,
+        usage=provider.usage,
     )
 
 

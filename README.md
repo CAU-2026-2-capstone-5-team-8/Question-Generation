@@ -9,6 +9,8 @@ The production boundary is intentionally narrow:
 - supported v2: Level 1 `vocabulary/recognize` and `background_knowledge/recall`
 - supported grounded v3: single-source Level 2 `comprehension/apply` with a validated
   `generation-grounding-v1` artifact
+- supported display-grounded v4: the same narrow target with a validated
+  `generation-grounding-v2` artifact and separate `passage` / `stem` fields
 - rejected: ungrounded comprehension, `compare`, `relate`, `integrate`, `infer`, multi-step
   reasoning, arbitrary relation reasoning, and all other operation/difficulty combinations
 - output: exactly four choices, one correct answer, an explanation, generation provenance, and
@@ -72,10 +74,12 @@ The local Pydantic contract preserves and validates:
 The adapter also hashes the exact input artifact bytes. It never imports ML Python modules and never
 chooses a replacement spec.
 
-Grounded comprehension additionally requires an ML `generation-grounding-v1` JSON artifact. Its
-strict local contract binds the exact QuestionSpec hash, blueprint hash, document/book/source IDs,
-document and source hashes, 600–1,800 character passage and passage hash, extraction policy,
-license/rights provenance, and the four canonical dataset hashes. The adapter rejects any mismatch;
+Grounded comprehension requires an ML `generation-grounding-v1` or `generation-grounding-v2` JSON
+artifact. V1 binds one exact 600–1,800 character canonical substring. V2 preserves that role as
+`source_passage_text` and adds separately hashed `display_passage_text` under the reviewed,
+source-hash-bound `pdf-display-normalization-v1` policy. Both strict local contracts bind the exact
+QuestionSpec and blueprint, document/book/source identities, document and source hashes,
+license/rights provenance, and all four canonical dataset hashes. The adapter rejects any mismatch;
 it does not read Data-Pipeline files or resolve source IDs itself.
 
 The committed fixture at `tests/fixtures/ml_question_specs.json` contains one real vocabulary spec
@@ -132,6 +136,12 @@ not require external knowledge, and returns only the question sentence. Finaliza
 unchanged source passage to the stem so the assessment user sees `passage + question + choices`.
 No whole chapter, fallback document, summary, source URL, or synthetic prose is sent.
 
+With `generation-grounding-v2`, `question-generation-grounded-prompt-v4` sends only the reviewed
+display passage as factual source text. It includes both source/display hashes and the normalization
+policy for audit, but not the raw passage text or source URL. Final `generated-question-v4` keeps the
+display `passage` separate from the provider's question-only `stem`; v2 and v3 serialization and IDs
+are unchanged.
+
 Inspect the exact prompt without an API key or network call:
 
 ```bash
@@ -156,6 +166,16 @@ uv run bookmatch-question-generation render-prompt \
   --blueprint ../ML/data/output/linear_algebra_assessment_blueprint_reviewed.json \
   --question-id q_375e5b6bef551015f67c \
   --grounding ../ML/data/output/linear_algebra_matrix_grounding.json
+```
+
+Use the same command with the v2 grounding artifact to render the separated v4 prompt:
+
+```bash
+uv run bookmatch-question-generation generate \
+  --dry-run \
+  --blueprint ../ML/data/output/linear_algebra_assessment_blueprint_reviewed.json \
+  --question-id q_375e5b6bef551015f67c \
+  --grounding ../ML/data/output/linear_algebra_matrix_grounding_v2.json
 ```
 
 ## Generate one question
@@ -186,6 +206,9 @@ uv run bookmatch-question-generation generate \
   --grounding ../ML/data/output/linear_algebra_matrix_grounding.json \
   --output data/generated/la-matrix-comprehension.json
 ```
+
+Passing `linear_algebra_matrix_grounding_v2.json` instead produces `generated-question-v4` with a
+separate display `passage`. Live generation is not required to validate or dry-run this contract.
 
 Grounded comprehension requires `--blueprint`; standalone `--spec` input is rejected because it
 cannot prove the authoritative blueprint hash and canonical dataset hashes.
@@ -238,6 +261,7 @@ The grounded path uses `question-generation-grounded-revision-prompt-v1`, requir
 stem from the unchanged grounding passage. Standalone `--spec` grounded revision and any mismatch
 in passage, source document, grounding hash, target identity, or output language fail closed. The
 existing ungrounded v2 revision path and its prompt remain unchanged.
+V4 revision is intentionally unsupported until a live v4 question has completed human QA.
 
 ## Output and deterministic ID
 
@@ -260,6 +284,13 @@ usage is excluded because it can vary without changing the question.
 question, `source_document_ids` contains exactly one ML-selected document, and
 `input_artifact_hash` identifies the exact grounding artifact (which in turn binds the blueprint and
 canonical dataset). Existing v2 generation, serialization, and deterministic IDs are unchanged.
+
+`generated-question-v4` is a separate schema. `passage` contains the deterministic display text and
+`stem` contains only the question. It retains the grounding version, source extraction policy,
+source passage hash, display passage hash, display normalization policy, single source document,
+and exact grounding artifact hash. Its deterministic ID covers those fields. See the
+[display-grounded v4 report](docs/experiments/display-grounded-question-v4.md) for the provider
+passage decision, dry-run evidence, and Backend boundary.
 
 ## Deterministic validation
 
@@ -327,12 +358,13 @@ matchers, vector databases, web grounding, async queues, cloud deployment, or au
 contains no topic-specific generation conditionals.
 
 The existing v2 targets still carry evidence metadata rather than source text and cannot justify
-source-specific claims. Grounded v3 is limited to one apply target, one source document, Level 2,
-and a fixed 600–1,800 character passage policy. Integrate/Level 3 and multiple-source synthesis
-remain unsupported. Grounded revision preserves the exact passage and provenance but does not
-normalize PDF extraction artifacts for display. All question types use four choices, so
+source-specific claims. Grounded v3/v4 are limited to one apply target, one source document, Level
+2, and a fixed bounded passage policy. V4 currently accepts only reviewed source/hash normalization
+rules; an unseen passage fails closed until reviewed. Integrate/Level 3, multiple-source synthesis,
+and v4 revision remain unsupported. All question types use four choices, so
 `background_knowledge / recall` measures cued recognition more closely than pure free recall.
 
 Backend currently imports only `generated-question-v2`, Level 1 vocabulary/background targets, and
-empty source-document IDs. It therefore rejects grounded v3 by design. Supporting v3 later requires
-an explicit Backend contract update; this repository does not weaken the current importer.
+empty source-document IDs. It therefore rejects grounded v3 and v4 by design. Supporting the final
+grounded contract later requires an explicit Backend update; this repository does not weaken the
+current importer.

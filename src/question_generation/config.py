@@ -9,11 +9,13 @@ DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_OUTPUT_LANGUAGE = "ko-KR"
 PROMPT_VERSION = "question-generation-prompt-v2"
 GROUNDED_PROMPT_VERSION = "question-generation-grounded-prompt-v3"
+DISPLAY_GROUNDED_PROMPT_VERSION = "question-generation-grounded-prompt-v4"
 REVISION_PROMPT_VERSION = "question-generation-revision-prompt-v1"
 GROUNDED_REVISION_PROMPT_VERSION = "question-generation-grounded-revision-prompt-v1"
 GENERATION_CONFIG_VERSION = "gemini-generation-config-v2"
 GENERATED_QUESTION_VERSION = "generated-question-v2"
 GROUNDED_GENERATED_QUESTION_VERSION = "generated-question-v3"
+DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION = "generated-question-v4"
 SUPPORTED_QUESTION_SPEC_VERSION = "question-spec-v1"
 
 
