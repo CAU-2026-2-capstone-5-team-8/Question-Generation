@@ -17,6 +17,7 @@ from question_generation.generation import (
     revise_display_grounded_question,
     revise_grounded_question,
     revise_question,
+    validate_display_grounded_revision_source,
 )
 from question_generation.input_adapter import (
     LoadedGenerationGrounding,
@@ -308,6 +309,20 @@ def revise(
             validate_supported_spec(loaded.spec)
         if resolved_output in protected_inputs:
             raise InputContractError("revision output path must differ from every input path")
+        if loaded_grounding is not None and isinstance(
+            loaded_grounding.grounding, GenerationGroundingV2
+        ):
+            assert loaded.blueprint_canonical_file_hashes is not None
+            preflight_settings = load_settings(require_api_key=False)
+            validate_display_grounded_revision_source(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=loaded_grounding.grounding,
+                grounding_artifact_hash=loaded_grounding.artifact_hash,
+                previous=previous_question,
+                output_language=preflight_settings.output_language,
+            )
         settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
         if loaded_grounding is None:

@@ -14,6 +14,7 @@ from question_generation.generation import (
     FakeQuestionGenerator,
     generate_display_grounded_question,
     revise_display_grounded_question,
+    validate_display_grounded_revision_source,
 )
 from question_generation.input_adapter import load_generation_grounding, load_question_spec
 from question_generation.prompt import (
@@ -408,6 +409,24 @@ def test_v4_revision_preserves_passage_and_provenance_with_new_id() -> None:
     assert len(fake.prompts) == 1
 
 
+def test_valid_v4_revision_source_passes_provider_independent_preflight() -> None:
+    spec = _spec()
+    grounding = _grounding(spec)
+    previous = _previous_v4(spec, grounding)
+
+    validated = validate_display_grounded_revision_source(
+        spec,
+        blueprint_hash=HASH,
+        canonical_file_hashes=CANONICAL_HASHES,
+        grounding=grounding,
+        grounding_artifact_hash=GROUNDING_ARTIFACT_HASH,
+        previous=previous,
+        output_language=previous.output_language,
+    )
+
+    assert validated is previous
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -561,3 +580,61 @@ def test_cli_revises_v4_without_overwriting_inputs(
         fake.prompts[0].prompt_version == "question-generation-display-grounded-revision-prompt-v1"
     )
     assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []
+
+
+def test_cli_rejects_invalid_v4_preflight_before_api_key_or_provider_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = _spec()
+    blueprint_path = tmp_path / "blueprint.json"
+    grounding_path = tmp_path / "grounding.json"
+    previous_path = tmp_path / "previous.json"
+    feedback_path = tmp_path / "feedback.txt"
+    output_path = tmp_path / "revised.json"
+    _write_blueprint(blueprint_path, spec)
+    loaded = load_question_spec(blueprint_path, question_id=spec.question_id)
+    grounding = _grounding(spec, blueprint_hash=loaded.artifact_hash)
+    grounding_path.write_text(grounding.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    loaded_grounding = load_generation_grounding(grounding_path)
+    previous = _previous_v4(
+        spec,
+        grounding,
+        blueprint_hash=loaded.artifact_hash,
+        grounding_artifact_hash=loaded_grounding.artifact_hash,
+    )
+    previous_path.write_text(previous.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    feedback_path.write_text("Improve distractor quality.\n", encoding="utf-8")
+    grounding_path.write_text(grounding.model_dump_json() + "\n", encoding="utf-8")
+    provider_constructed = False
+
+    def unexpected_generator(*args: object, **kwargs: object) -> None:
+        nonlocal provider_constructed
+        provider_constructed = True
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr("question_generation.cli.GeminiQuestionGenerator", unexpected_generator)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "revise",
+            "--blueprint",
+            str(blueprint_path),
+            "--question-id",
+            spec.question_id,
+            "--grounding",
+            str(grounding_path),
+            "--previous",
+            str(previous_path),
+            "--feedback-file",
+            str(feedback_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "input_artifact_hash" in result.output
+    assert "GEMINI_API_KEY is required" not in result.output
+    assert provider_constructed is False
+    assert not output_path.exists()

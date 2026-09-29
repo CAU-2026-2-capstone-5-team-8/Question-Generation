@@ -94,22 +94,38 @@ def test_grounded_comprehension_human_review_is_recorded_exactly() -> None:
 def test_display_grounded_comprehension_human_review_is_recorded_exactly() -> None:
     reviews = load_review_jsonl(DISPLAY_GROUNDED_COMPREHENSION_REVIEW_FILE)
 
-    assert len(reviews) == 1
-    review = reviews[0]
-    assert review.generated_question_id == "gq_c0e6f6c774e467bcb8ab2c10a4cd9379"
-    assert review.correct is True
-    assert review.concept_alignment == 5
-    assert review.difficulty_appropriate is True
-    assert review.distractor_quality == 3
-    assert review.explanation_quality == 5
-    assert review.status == "needs_revision"
-    assert review.notes == (
+    assert len(reviews) == 2
+    assert len({item.generated_question_id for item in reviews}) == 2
+    first_pass, revised = reviews
+    assert first_pass.generated_question_id == "gq_c0e6f6c774e467bcb8ab2c10a4cd9379"
+    assert first_pass.correct is True
+    assert first_pass.concept_alignment == 5
+    assert first_pass.difficulty_appropriate is True
+    assert first_pass.distractor_quality == 3
+    assert first_pass.explanation_quality == 5
+    assert first_pass.status == "needs_revision"
+    assert first_pass.notes == (
         "display passage는 raw source의 의미와 행렬 구조를 보존하면서 PDF 추출 오류를 충분히 "
         "개선했다. 문항은 passage의 2×3 예시를 그대로 대조하는 대신 4행 5열이라는 새로운 상황에 "
         "행 우선 표기 규칙을 적용해야 하므로 comprehension/apply/Level 2 목적에 적절하다. 정답과 "
         "해설도 passage에 근거해 정확하다. 다만 선택지 A의 '오브젝트-포(five-by-four)' 표현은 "
         "자연스럽지 않고 오답 단서를 과도하게 제공하여 distractor 품질을 저하시킨다. 선택지 간 "
         "오개념을 더 자연스럽고 서로 다른 형태로 구성한 뒤 재검토하는 것이 적절하다."
+    )
+    assert revised.generated_question_id == "gq_66f3360464d1336ec1612715ebbdd3ed"
+    assert revised.correct is True
+    assert revised.concept_alignment == 5
+    assert revised.difficulty_appropriate is True
+    assert revised.distractor_quality == 4
+    assert revised.explanation_quality == 4
+    assert revised.status == "approve"
+    assert revised.notes == (
+        "passage의 2×3 예시를 그대로 대조하는 기존 문제와 달리, 4행 3열이라는 새로운 상황에 행 "
+        "우선 m×n 표기 규칙을 적용해야 하므로 comprehension/apply/Level 2 목적에 적절하다. 정답은 "
+        "passage만으로 결정할 수 있고 외부 지식이 필요하지 않으며, 네 선택지는 행/열 순서와 표기 "
+        "규칙의 혼동을 활용해 이전보다 자연스럽게 구성됐다. 다만 일부 distractor는 표기와 설명을 "
+        "조합한 단순한 오개념 형태이고, 해설의 'stated된다' 표현은 다소 부자연스럽다. 이러한 "
+        "표현상 한계는 정답성이나 concept alignment를 훼손하지 않으므로 현재 문항은 승인한다."
     )
 
 

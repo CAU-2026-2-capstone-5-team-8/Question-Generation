@@ -107,6 +107,18 @@ provider returns only question output fields. Finalization preserves the previou
 byte-for-byte and writes the revision to a distinct artifact with a new deterministic ID. V2
 revision, v3 grounded revision, and first-pass v4 generation remain unchanged.
 
+The first live revision call succeeded with `gemini-3.5-flash-lite` and produced
+`gq_66f3360464d1336ec1612715ebbdd3ed`. Its passage and provenance are byte-identical to the
+first-pass v4 artifact. Human QA approved the revision with correctness `true`, concept alignment
+5/5, difficulty appropriate `true`, distractor quality 4/5, and explanation quality 4/5. The
+canonical JSONL preserves both lifecycle decisions in order: first pass `needs_revision`, then
+revision `approve`.
+
+The CLI runs the same v4 source validation as a provider-independent preflight before API-key
+requirements or Gemini client construction, and the generation function repeats it as an internal
+defense. Invalid version, target, grounding hash, source identity, raw/display hash, policy,
+language, or passage therefore fails with `InputContractError` before provider setup.
+
 ## Preserved experiment history and Backend boundary
 
 The original `gq_4783115ebe51684dd059a1724b42df8b` artifact and its `needs_revision` human review

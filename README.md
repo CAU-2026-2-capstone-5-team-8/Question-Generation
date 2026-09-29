@@ -268,8 +268,10 @@ Display-grounded v4 revision uses the same command with `generation-grounding-v2
 factual basis, and accepts provider output only for `stem`, `choices`, `correct_choice_index`, and
 `explanation`. Finalization copies the validated previous `passage` byte-for-byte and preserves all
 raw/display hashes, normalization policy, source document identity, and grounding artifact hash.
-Any mismatch fails before provider construction. The original artifact remains unchanged and the
-replacement receives a new deterministic ID.
+The CLI preflights those deterministic inputs before requiring an API key or constructing the
+provider, while the generation function repeats the same validation defensively. Any mismatch
+fails with `InputContractError`. The original artifact remains unchanged and the replacement
+receives a new deterministic ID.
 
 ## Output and deterministic ID
 

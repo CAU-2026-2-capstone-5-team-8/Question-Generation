@@ -330,7 +330,7 @@ def revise_grounded_question(
     )
 
 
-def revise_display_grounded_question(
+def validate_display_grounded_revision_source(
     spec: QuestionSpec,
     *,
     blueprint_hash: str,
@@ -338,11 +338,9 @@ def revise_display_grounded_question(
     grounding: GenerationGroundingV2,
     grounding_artifact_hash: str,
     previous: GeneratedQuestion | GeneratedQuestionV4,
-    feedback: str,
-    generator: QuestionGenerator,
     output_language: str = DEFAULT_OUTPUT_LANGUAGE,
 ) -> GeneratedQuestionV4:
-    """Revise v4 output while preserving its validated display passage and provenance."""
+    """Validate every deterministic v4 revision input without provider setup."""
 
     validate_grounding_for_spec(
         grounding,
@@ -376,10 +374,36 @@ def revise_display_grounded_question(
         raise InputContractError(
             "previous question does not match display grounding: " + ", ".join(grounding_mismatches)
         )
+    return previous
+
+
+def revise_display_grounded_question(
+    spec: QuestionSpec,
+    *,
+    blueprint_hash: str,
+    canonical_file_hashes: dict[str, str],
+    grounding: GenerationGroundingV2,
+    grounding_artifact_hash: str,
+    previous: GeneratedQuestion | GeneratedQuestionV4,
+    feedback: str,
+    generator: QuestionGenerator,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> GeneratedQuestionV4:
+    """Revise v4 output while preserving its validated display passage and provenance."""
+
+    validated_previous = validate_display_grounded_revision_source(
+        spec,
+        blueprint_hash=blueprint_hash,
+        canonical_file_hashes=canonical_file_hashes,
+        grounding=grounding,
+        grounding_artifact_hash=grounding_artifact_hash,
+        previous=previous,
+        output_language=output_language,
+    )
     prompt = build_display_grounded_revision_prompt(
         spec,
         grounding,
-        previous,
+        validated_previous,
         feedback,
         output_language=output_language,
     )
@@ -387,7 +411,7 @@ def revise_display_grounded_question(
         spec,
         grounding=grounding,
         grounding_artifact_hash=grounding_artifact_hash,
-        passage=previous.passage,
+        passage=validated_previous.passage,
         generator=generator,
         prompt=prompt,
         output_language=output_language,
