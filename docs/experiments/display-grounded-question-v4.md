@@ -73,9 +73,9 @@ binding, and rendered the v4 prompt with `--dry-run`. No API key was required an
 was made.
 
 - QuestionSpec: `q_375e5b6bef551015f67c`
-- grounding artifact hash: `sha256:04cce628e248f54b4e22556ca8dea7e8fd5d248ea9a4ffaf7d2f68d06ae6d8f1`
+- grounding artifact hash: `sha256:a9d7f5f1b1487040c6aff681fbfe8591800a274aa0b5e2231cf784ea8c1fe2a6`
 - source passage hash: `sha256:7220ee5501766f97edabc506e871470356fa2aeb40ec92acfd6f7e44d9ce4ce0`
-- display passage hash: `sha256:001d13062c6eb34f89d0c2d50224466851efbe1282ff19a7518595bb8e99bbb2`
+- display passage hash: `sha256:c5126e3650a7c2329f2a4281efc774465bb9954e19091808d7162938926850a4`
 - policy: `pdf-display-normalization-v1`
 - prompt: `question-generation-grounded-prompt-v4`
 
