@@ -261,7 +261,17 @@ The grounded path uses `question-generation-grounded-revision-prompt-v1`, requir
 stem from the unchanged grounding passage. Standalone `--spec` grounded revision and any mismatch
 in passage, source document, grounding hash, target identity, or output language fail closed. The
 existing ungrounded v2 revision path and its prompt remain unchanged.
-V4 revision is intentionally unsupported until a live v4 question has completed human QA.
+
+Display-grounded v4 revision uses the same command with `generation-grounding-v2` and a preserved
+`generated-question-v4` input. It uses
+`question-generation-display-grounded-revision-prompt-v1`, sends the display passage only as the
+factual basis, and accepts provider output only for `stem`, `choices`, `correct_choice_index`, and
+`explanation`. Finalization copies the validated previous `passage` byte-for-byte and preserves all
+raw/display hashes, normalization policy, source document identity, and grounding artifact hash.
+The CLI preflights those deterministic inputs before requiring an API key or constructing the
+provider, while the generation function repeats the same validation defensively. Any mismatch
+fails with `InputContractError`. The original artifact remains unchanged and the replacement
+receives a new deterministic ID.
 
 ## Output and deterministic ID
 

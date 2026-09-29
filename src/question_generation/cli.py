@@ -14,8 +14,10 @@ from question_generation.generation import (
     generate_display_grounded_question,
     generate_grounded_question,
     generate_question,
+    revise_display_grounded_question,
     revise_grounded_question,
     revise_question,
+    validate_display_grounded_revision_source,
 )
 from question_generation.input_adapter import (
     LoadedGenerationGrounding,
@@ -31,7 +33,7 @@ from question_generation.prompt import (
 )
 from question_generation.schemas import (
     GeneratedQuestion,
-    GenerationGrounding,
+    GeneratedQuestionV4,
     GenerationGroundingV2,
 )
 from question_generation.validation import validate_grounding_for_spec, validate_supported_spec
@@ -86,10 +88,14 @@ def _write_json_atomic(output: Path, content: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _load_previous_question(path: Path) -> GeneratedQuestion:
+def _load_previous_question(path: Path) -> GeneratedQuestion | GeneratedQuestionV4:
     try:
-        return GeneratedQuestion.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        content = path.read_text(encoding="utf-8")
+        version = json.loads(content).get("generated_question_version")
+        if version == "generated-question-v4":
+            return GeneratedQuestionV4.model_validate_json(content)
+        return GeneratedQuestion.model_validate_json(content)
+    except (OSError, ValueError, AttributeError) as exc:
         raise InputContractError(f"invalid previous generated question: {path.name}") from exc
 
 
@@ -296,11 +302,6 @@ def revise(
             if grounding_path is None:
                 raise InputContractError("--grounding is required for grounded revision")
             loaded_grounding = load_generation_grounding(grounding_path)
-            if not isinstance(loaded_grounding.grounding, GenerationGrounding):
-                raise InputContractError(
-                    "grounded revision currently requires generation-grounding-v1 and "
-                    "generated-question-v3 inputs"
-                )
             protected_inputs.add(loaded_grounding.artifact_path)
         else:
             if grounding_path is not None:
@@ -308,9 +309,25 @@ def revise(
             validate_supported_spec(loaded.spec)
         if resolved_output in protected_inputs:
             raise InputContractError("revision output path must differ from every input path")
+        if loaded_grounding is not None and isinstance(
+            loaded_grounding.grounding, GenerationGroundingV2
+        ):
+            assert loaded.blueprint_canonical_file_hashes is not None
+            preflight_settings = load_settings(require_api_key=False)
+            validate_display_grounded_revision_source(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=loaded_grounding.grounding,
+                grounding_artifact_hash=loaded_grounding.artifact_hash,
+                previous=previous_question,
+                output_language=preflight_settings.output_language,
+            )
         settings = load_settings(require_api_key=True)
         generator = GeminiQuestionGenerator(settings)
         if loaded_grounding is None:
+            if not isinstance(previous_question, GeneratedQuestion):
+                raise InputContractError("ungrounded revision requires generated-question-v2 input")
             question = revise_question(
                 loaded.spec,
                 artifact_hash=loaded.artifact_hash,
@@ -321,17 +338,30 @@ def revise(
             )
         else:
             assert loaded.blueprint_canonical_file_hashes is not None
-            question = revise_grounded_question(
-                loaded.spec,
-                blueprint_hash=loaded.artifact_hash,
-                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
-                grounding=loaded_grounding.grounding,
-                grounding_artifact_hash=loaded_grounding.artifact_hash,
-                previous=previous_question,
-                feedback=feedback,
-                generator=generator,
-                output_language=settings.output_language,
-            )
+            if isinstance(loaded_grounding.grounding, GenerationGroundingV2):
+                question = revise_display_grounded_question(
+                    loaded.spec,
+                    blueprint_hash=loaded.artifact_hash,
+                    canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                    grounding=loaded_grounding.grounding,
+                    grounding_artifact_hash=loaded_grounding.artifact_hash,
+                    previous=previous_question,
+                    feedback=feedback,
+                    generator=generator,
+                    output_language=settings.output_language,
+                )
+            else:
+                question = revise_grounded_question(
+                    loaded.spec,
+                    blueprint_hash=loaded.artifact_hash,
+                    canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                    grounding=loaded_grounding.grounding,
+                    grounding_artifact_hash=loaded_grounding.artifact_hash,
+                    previous=previous_question,
+                    feedback=feedback,
+                    generator=generator,
+                    output_language=settings.output_language,
+                )
         try:
             _write_json_atomic(
                 resolved_output,

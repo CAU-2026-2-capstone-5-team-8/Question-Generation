@@ -4,7 +4,7 @@
 
 This contract consumes ML `generation-grounding-v2` from ML PR #29. It is additive: existing
 `generated-question-v2`, `generated-question-v3`, and grounded v3 revision behavior are unchanged.
-No live provider call was made for this milestone.
+No live provider call was made while the display contract itself was introduced.
 
 The supported target remains deliberately narrow:
 
@@ -12,7 +12,7 @@ The supported target remains deliberately narrow:
 single source / comprehension / apply / Level 2
 ```
 
-`integrate`, Level 3, multi-source grounding, v4 revision, and Backend import remain unsupported.
+`integrate`, Level 3, multi-source grounding, and Backend import remain unsupported.
 
 ## Input validation
 
@@ -84,6 +84,40 @@ was made.
 Repeated fake-provider finalization with identical structured output produced the same complete v4
 object and deterministic ID. Existing v2/v3 generation and v3 revision tests continue to exercise
 their historical paths.
+
+## First live question and human review
+
+One later live call produced `gq_c0e6f6c774e467bcb8ab2c10a4cd9379`. Its display passage,
+grounding provenance, authoritative target, answer, and explanation passed deterministic validation.
+Human QA recorded `needs_revision` in
+`reviews/linear-algebra-display-grounded-comprehension-v1.jsonl`: correctness, concept alignment,
+and Level 2 difficulty passed, but the unnatural `오브젝트-포` distractor created an obvious surface
+clue and reduced distractor quality to 3/5.
+
+## Display-grounded revision
+
+V4 revision reuses the existing `revise` CLI, provider adapter, structured provider schema,
+semantic validation, deterministic ID, and atomic output writer. The new
+`question-generation-display-grounded-revision-prompt-v1` path requires the same blueprint,
+QuestionSpec, `generation-grounding-v2` artifact, original v4 question, and explicit feedback.
+
+Before calling a provider it revalidates target identity, output language, grounding artifact hash,
+source document, source and display hashes, normalization policy, and exact display passage. The
+provider returns only question output fields. Finalization preserves the previous passage
+byte-for-byte and writes the revision to a distinct artifact with a new deterministic ID. V2
+revision, v3 grounded revision, and first-pass v4 generation remain unchanged.
+
+The first live revision call succeeded with `gemini-3.5-flash-lite` and produced
+`gq_66f3360464d1336ec1612715ebbdd3ed`. Its passage and provenance are byte-identical to the
+first-pass v4 artifact. Human QA approved the revision with correctness `true`, concept alignment
+5/5, difficulty appropriate `true`, distractor quality 4/5, and explanation quality 4/5. The
+canonical JSONL preserves both lifecycle decisions in order: first pass `needs_revision`, then
+revision `approve`.
+
+The CLI runs the same v4 source validation as a provider-independent preflight before API-key
+requirements or Gemini client construction, and the generation function repeats it as an internal
+defense. Invalid version, target, grounding hash, source identity, raw/display hash, policy,
+language, or passage therefore fails with `InputContractError` before provider setup.
 
 ## Preserved experiment history and Backend boundary
 

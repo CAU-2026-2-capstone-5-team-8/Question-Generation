@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from question_generation.config import (
     DEFAULT_OUTPUT_LANGUAGE,
     DISPLAY_GROUNDED_PROMPT_VERSION,
+    DISPLAY_GROUNDED_REVISION_PROMPT_VERSION,
     GROUNDED_PROMPT_VERSION,
     GROUNDED_REVISION_PROMPT_VERSION,
     PROMPT_VERSION,
@@ -13,6 +14,7 @@ from question_generation.config import (
 )
 from question_generation.schemas import (
     GeneratedQuestion,
+    GeneratedQuestionV4,
     GenerationGrounding,
     GenerationGroundingV2,
     QuestionSpec,
@@ -74,6 +76,22 @@ identical string from the passage. Do not require outside knowledge. Preserve co
 at Level 2. Produce exactly four plausible, mutually distinct choices with exactly one correct
 answer, and explain the answer only from the passage. The previous question and reviewer feedback
 are revision context, not additional factual evidence."""
+
+DISPLAY_GROUNDED_REVISION_INSTRUCTION = """You revise one previously generated display-grounded
+question in response to reviewer feedback. Return a complete replacement question, not a patch or
+commentary. Preserve the authoritative QuestionSpec and use only the provided display passage as
+the factual basis. The application preserves and displays the passage separately: do not modify,
+rewrite, translate, summarize, or repeat it in the returned stem. Address every applicable
+reviewer feedback point while preserving comprehension/apply at Level 2. The revised question must
+apply a rule from the passage to a new situation and must not be answerable by copying the existing
+2x3 example or matching an identical string. Do not require outside knowledge. Produce exactly
+four natural Korean, mutually distinct choices with exactly one correct answer. Every distractor
+must reflect a plausible misconception, such as confusing row and column order, notation and
+reading order, or dimensions and entry count. Do not hardcode those examples when they do not fit
+the question. Never use a typo, nonsense word, broken grammar, answer length, an absolute phrase,
+or another surface clue to reveal an incorrect answer. Explain the answer only from the display
+passage. The previous question and reviewer feedback are revision context, not additional factual
+evidence."""
 
 
 def _language_policy(output_language: str) -> str:
@@ -306,4 +324,57 @@ def build_grounded_revision_prompt(
         contents=contents,
         output_language=output_language,
         prompt_version=GROUNDED_REVISION_PROMPT_VERSION,
+    )
+
+
+def build_display_grounded_revision_prompt(
+    spec: QuestionSpec,
+    grounding: GenerationGroundingV2,
+    previous: GeneratedQuestionV4,
+    feedback: str,
+    *,
+    output_language: str = DEFAULT_OUTPUT_LANGUAGE,
+) -> PromptPayload:
+    """Render a v4 replacement request without making the passage provider-editable."""
+
+    if not feedback or feedback != feedback.strip():
+        raise ValueError("revision feedback must be nonblank and trimmed")
+    if len(feedback) > 8000:
+        raise ValueError("revision feedback must not exceed 8000 characters")
+    revision_context = {
+        "authoritative_target": _audit_context(spec, output_language),
+        "grounding": {
+            "grounding_version": grounding.grounding_version,
+            "source_document_id": grounding.source_document_id,
+            "document_content_hash": grounding.document_content_hash,
+            "source_passage_extraction_policy": grounding.source_passage_extraction_policy,
+            "source_passage_hash": grounding.source_passage_hash,
+            "display_normalization_policy": grounding.display_normalization_policy,
+            "display_passage_hash": grounding.display_passage_hash,
+            "display_passage_text": grounding.display_passage_text,
+        },
+        "previous_question": {
+            "generated_question_id": previous.generated_question_id,
+            "question": previous.stem,
+            "choices": previous.choices,
+            "correct_choice_index": previous.correct_choice_index,
+            "explanation": previous.explanation,
+        },
+        "reviewer_feedback": feedback,
+    }
+    contents = (
+        "Generate exactly one revised display-grounded question for the authoritative target. "
+        "Echo all target identity fields exactly and ground the answer only in "
+        "grounding.display_passage_text. Return only question output fields; the application "
+        "will preserve the validated passage byte-for-byte.\n\n"
+        + json.dumps(revision_context, ensure_ascii=False, sort_keys=True, indent=2)
+    )
+    return PromptPayload(
+        system_instruction=(
+            f"{GROUNDED_SYSTEM_INSTRUCTION}\n\n{DISPLAY_GROUNDED_REVISION_INSTRUCTION}\n\n"
+            f"{_language_policy(output_language)}"
+        ),
+        contents=contents,
+        output_language=output_language,
+        prompt_version=DISPLAY_GROUNDED_REVISION_PROMPT_VERSION,
     )
