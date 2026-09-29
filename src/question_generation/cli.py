@@ -11,6 +11,7 @@ from question_generation.config import load_settings
 from question_generation.errors import InputContractError, QuestionGenerationError
 from question_generation.gemini import GeminiQuestionGenerator
 from question_generation.generation import (
+    generate_display_grounded_question,
     generate_grounded_question,
     generate_question,
     revise_grounded_question,
@@ -22,8 +23,17 @@ from question_generation.input_adapter import (
     load_generation_grounding,
     load_question_spec,
 )
-from question_generation.prompt import PromptPayload, build_grounded_prompt, build_prompt
-from question_generation.schemas import GeneratedQuestion
+from question_generation.prompt import (
+    PromptPayload,
+    build_display_grounded_prompt,
+    build_grounded_prompt,
+    build_prompt,
+)
+from question_generation.schemas import (
+    GeneratedQuestion,
+    GenerationGrounding,
+    GenerationGroundingV2,
+)
 from question_generation.validation import validate_grounding_for_spec, validate_supported_spec
 
 app = typer.Typer(
@@ -114,14 +124,19 @@ def _prepare_generation(
             blueprint_hash=loaded.artifact_hash,
             canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
         )
-        return (
-            build_grounded_prompt(
+        if isinstance(grounding.grounding, GenerationGroundingV2):
+            prompt = build_display_grounded_prompt(
                 loaded.spec,
                 grounding.grounding,
                 output_language=output_language,
-            ),
-            grounding,
-        )
+            )
+        else:
+            prompt = build_grounded_prompt(
+                loaded.spec,
+                grounding.grounding,
+                output_language=output_language,
+            )
+        return prompt, grounding
     if grounding_path is not None:
         raise InputContractError("--grounding is valid only for comprehension generation")
     validate_supported_spec(loaded.spec)
@@ -194,6 +209,17 @@ def generate(
             question = generate_question(
                 loaded.spec,
                 artifact_hash=loaded.artifact_hash,
+                generator=generator,
+                output_language=settings.output_language,
+            )
+        elif isinstance(grounding.grounding, GenerationGroundingV2):
+            assert loaded.blueprint_canonical_file_hashes is not None
+            question = generate_display_grounded_question(
+                loaded.spec,
+                blueprint_hash=loaded.artifact_hash,
+                canonical_file_hashes=loaded.blueprint_canonical_file_hashes,
+                grounding=grounding.grounding,
+                grounding_artifact_hash=grounding.artifact_hash,
                 generator=generator,
                 output_language=settings.output_language,
             )
@@ -270,6 +296,11 @@ def revise(
             if grounding_path is None:
                 raise InputContractError("--grounding is required for grounded revision")
             loaded_grounding = load_generation_grounding(grounding_path)
+            if not isinstance(loaded_grounding.grounding, GenerationGrounding):
+                raise InputContractError(
+                    "grounded revision currently requires generation-grounding-v1 and "
+                    "generated-question-v3 inputs"
+                )
             protected_inputs.add(loaded_grounding.artifact_path)
         else:
             if grounding_path is not None:
