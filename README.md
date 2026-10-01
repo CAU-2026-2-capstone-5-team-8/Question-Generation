@@ -370,11 +370,12 @@ contains no topic-specific generation conditionals.
 The existing v2 targets still carry evidence metadata rather than source text and cannot justify
 source-specific claims. Grounded v3/v4 are limited to one apply target, one source document, Level
 2, and a fixed bounded passage policy. V4 currently accepts only reviewed source/hash normalization
-rules; an unseen passage fails closed until reviewed. Integrate/Level 3, multiple-source synthesis,
-and v4 revision remain unsupported. All question types use four choices, so
+rules; an unseen passage fails closed until reviewed. Integrate/Level 3 and multiple-source
+synthesis remain unsupported. All question types use four choices, so
 `background_knowledge / recall` measures cued recognition more closely than pure free recall.
 
-Backend currently imports only `generated-question-v2`, Level 1 vocabulary/background targets, and
-empty source-document IDs. It therefore rejects grounded v3 and v4 by design. Supporting the final
-grounded contract later requires an explicit Backend update; this repository does not weaken the
-current importer.
+Backend imports `generated-question-v2` (Level 1 vocabulary/background, empty source-document IDs)
+and, since Backend PR #24, `generated-question-v4` together with its `generation-grounding-v2`
+artifact, storing `passage` separately from `stem`. It rejects `generated-question-v3` by design:
+v3 embeds the passage inside `stem`, so use v4 for any grounded comprehension question that should
+reach the question bank.
