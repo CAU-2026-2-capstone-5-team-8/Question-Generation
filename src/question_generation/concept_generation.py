@@ -171,8 +171,8 @@ def write_review_packet(blueprint, questions, output: Path) -> None:
     lines = [
         "# 선형대수 새 진단 문항 검토",
         "",
-        "생성 후보입니다. 자동 구조 검사를 통과했으며 사람의 승인 기록은 없습니다.",
-        "정답·보기·목표·표현을 검토한 뒤 HumanQuestionReview JSONL로 승인합니다.",
+        "생성 후보입니다. 자동 구조 검사는 내용 검토나 승인 판정을 대신하지 않습니다.",
+        "별도 검토 기록에서 판정과 검토 주체(사람 또는 AI)를 확인하세요.",
         "",
     ]
     for index, q in enumerate(questions, 1):

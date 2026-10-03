@@ -18,6 +18,7 @@ from question_generation.concept_generation import (
     write_review_packet,
 )
 from question_generation.concept_review import (
+    ai_review_status,
     load_candidates,
     load_worksheet,
     prepare_review,
@@ -67,7 +68,7 @@ def local_drafts(
         path.write_text(q.model_dump_json(indent=2) + "\n")
         questions.append(q)
     write_review_packet(bank, questions, output_dir / "review.md")
-    typer.echo(f"{len(questions)} local drafts packaged; human approval pending")
+    typer.echo(f"{len(questions)} local drafts packaged; review pending")
 
 
 @app.command("generate")
@@ -121,7 +122,7 @@ def review(
     except (ValueError, OSError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     write_review_packet(bank, questions, output_dir / "review.md")
-    typer.echo(f"{len(questions)} candidates; human approval pending")
+    typer.echo(f"{len(questions)} candidates; review records are checked separately")
 
 
 @app.command("prepare-review")
@@ -152,6 +153,22 @@ def review_status_command(
     try:
         _, questions = load_candidates(blueprint, candidates_dir)
         report = review_status(questions, load_worksheet(reviews))
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+@app.command("ai-review-status")
+def ai_review_status_command(
+    blueprint: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    candidates_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    reviews: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+):
+    """Check explicitly authored AI content reviews against the exact candidates."""
+    import json
+
+    try:
+        report = ai_review_status(blueprint, candidates_dir, reviews)
     except (ValueError, OSError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))

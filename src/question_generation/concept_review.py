@@ -12,7 +12,7 @@ from question_generation.concept_contract import (
     content_hash,
 )
 from question_generation.concept_generation import file_hash, write_review_packet
-from question_generation.schemas import HumanQuestionReview, ReviewStatus
+from question_generation.schemas import AiQuestionReview, QuestionReviewJudgment, ReviewStatus
 
 
 class ReviewWorksheetRow(BaseModel):
@@ -29,11 +29,11 @@ class ReviewWorksheetRow(BaseModel):
     explanation_quality: int | None = Field(ge=1, le=5)
     notes: str = ""
 
-    def completed_review(self) -> HumanQuestionReview | None:
+    def completed_review(self) -> QuestionReviewJudgment | None:
         data = self.model_dump()
         if any(value is None for value in data.values()):
             return None
-        return HumanQuestionReview.model_validate(data)
+        return QuestionReviewJudgment.model_validate(data)
 
 
 def load_candidates(
@@ -87,6 +87,27 @@ def load_worksheet(path: Path) -> list[ReviewWorksheetRow]:
         except ValueError as exc:
             raise ValueError(f"invalid review worksheet at line {number}: {exc}") from exc
     return rows
+
+
+def ai_review_status(blueprint: Path, candidates_dir: Path, reviews: Path) -> dict:
+    """Validate authored AI judgments; never infer approval from structural checks."""
+    _, questions = load_candidates(blueprint, candidates_dir)
+    parsed = []
+    for number, line in enumerate(reviews.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            parsed.append(AiQuestionReview.model_validate_json(line))
+        except ValueError as exc:
+            raise ValueError(f"invalid AI review at line {number}: {exc}") from exc
+    report = review_status(
+        questions,
+        [ReviewWorksheetRow.model_validate(item.review.model_dump()) for item in parsed],
+    )
+    report["reviewer_type"] = "ai"
+    report["reviewer_names"] = sorted({item.reviewer_name for item in parsed})
+    report["validation_scope"] = "content-only"
+    return report
 
 
 def review_status(

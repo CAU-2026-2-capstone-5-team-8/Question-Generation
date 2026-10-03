@@ -328,7 +328,8 @@ heuristics that could reject valid technical terms.
 
 ## Human review
 
-Generated questions still require human review. `HumanQuestionReview` and
+Generated questions require a recorded content review. The legacy human review contract,
+`HumanQuestionReview`, and
 `examples/human_review.example.jsonl` use:
 
 - `status`: `approve`, `reject`, or `needs_revision`
@@ -408,7 +409,7 @@ uv run bookmatch-question-generation concept generate --blueprint ../ML/data/out
 uv run bookmatch-question-generation concept local-drafts --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json --drafts examples/concept-local-drafts.json --output-dir data/generated/concept-assessment-local-v2
 ```
 
-출력에는 질문·보기·정답·해설과 문항 목표를 비교할 `review.md`가 포함됩니다. 저장된 후보는 원본 설계서·목표 해시를 검증하고 재사용하며, 변경된 로컬 초안은 새 출력 폴더에 보존합니다. JSON 구조 검사는 수학적 정확성이나 교육적 타당성에 대한 사람 검토를 대신하지 않습니다. 사람이 검토한 기존 `HumanQuestionReview` JSONL에서 approve/correct=true를 확인해야 Backend에 등록합니다. 실제 후보에 AI가 사람 승인 기록을 만들어 넣지 않습니다.
+출력에는 질문·보기·정답·해설과 문항 목표를 비교할 `review.md`가 포함됩니다. 저장된 후보는 원본 설계서·목표 해시를 검증하고 재사용하며, 변경된 로컬 초안은 새 출력 폴더에 보존합니다. JSON 구조 검사는 내용 검토를 대신하지 않습니다. 기존 사람 검토는 `HumanQuestionReview`, 위임받은 AI 검토는 아래 별도 계약을 사용합니다. 실제 후보에 AI가 사람 승인 기록을 만들어 넣지 않습니다.
 
 사람 검토를 시작할 때는 별도 폴더에 문항과 빈 판정표를 만듭니다.
 
@@ -436,6 +437,37 @@ uv run bookmatch-question-generation concept review-status \
 수학적 정확성을 자동 보증하는 값이 아닙니다. 실제 bank의 문항 수나 평가 범위로 해석하지 않습니다.
 
 2026-10-03: 외부 생성 호출은 자동 승인 검토에서 보류됐습니다. 로컬 초안 18개를 별도 폴더에 만들었으며 사람 검토 전입니다. 외부 생성 결과와 구분하여 `generation_model=codex-local-draft`를 기록합니다.
+
+### 위임받은 AI 내용 검토
+
+2026-10-04 사용자가 문항 판단을 AI에 위임했습니다. Codex가 18문항을 읽고 10개를 수정한 뒤
+내용 기준으로 시범 사용을 승인했습니다. [문항별 AI 검토 기록](docs/concept-ai-review-2026-10-04.md)에
+판정 이유와 정확한 생성 ID를 남겼습니다. 기존 초안과 사람 판정표는 보존합니다.
+
+`AiQuestionReview`는 기존 판정 필드를 `review` 객체에 담고, 바깥에 필수 메타데이터
+`review_version=ai-question-review-v1`, `reviewer_type=ai`, `reviewer_name`,
+`validation_scope=content-only`를 명시합니다. `HumanQuestionReview`로 파싱하거나 저장하지 않습니다.
+Backend의 v5 등록 경로는 이를 `aiReview`로 보존하며 `approve`와 `correct=true`를 요구합니다.
+v2/v4의 기존 사람 검토 계약은 그대로 유지합니다. 판정 점수와 설계 난도 적절성은 편집 판단이며
+학습자 응답으로 검증된 난도·변별력을 뜻하지 않습니다.
+
+```sh
+uv run bookmatch-question-generation concept local-drafts \
+  --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json \
+  --drafts examples/concept-local-drafts-v4.json \
+  --output-dir data/generated/concept-assessment-ai-reviewed-v4
+
+# 별도로 작성한 AI 판정표를 검사한다. 이 명령은 판정을 생성하지 않는다.
+uv run bookmatch-question-generation concept ai-review-status \
+  --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json \
+  --candidates-dir data/generated/concept-assessment-ai-reviewed-v4 \
+  --reviews data/generated/concept-assessment-ai-reviewed-v4/ai-reviews.jsonl
+```
+
+18개 산출물에 대한 실제 AI 판정표와 명시적 등록 목록 `import-manifest.json`은 로컬 출력 폴더에
+보관합니다. 초안 재생성은 판정표를 만들지 않습니다. 바뀐 문항을 재검토하지 않고 이전 승인 ID를
+수정해 붙이는 방식은 사용하지 않습니다.
+
 ## 문항의 Markdown·수식 표시
 
 개념 문항의 텍스트 필드는 가벼운 Markdown과 LaTeX를 사용합니다. JSON 구조와 정답·개념 계약은 유지합니다.
