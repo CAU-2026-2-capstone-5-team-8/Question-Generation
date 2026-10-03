@@ -149,8 +149,9 @@ def test_generation_does_not_relabel_saved_v1_output_as_current_prompt(tmp_path,
         terminal_width=160,
     )
     assert result.exit_code != 0
-    from click import unstyle
+    import re
 
-    message = " ".join(unstyle(result.output).replace("│", " ").split())
+    plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.output)
+    message = " ".join(plain.replace("│", " ").split())
     assert "choose a new output directory" in message, result.output
     assert saved.read_bytes() == original
