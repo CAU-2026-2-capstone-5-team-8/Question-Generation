@@ -34,10 +34,10 @@ def test_prompt_is_versioned_minimal_and_preserves_target(vocabulary_spec: Quest
     assert vocabulary_spec.config_hash in rendered
     assert "audit context only" in rendered
     assert "exactly four" in rendered
-    assert "output language is ko-KR" in rendered
+    assert "output language is en-US" in rendered
     assert "stem, every choice" in rendered
-    assert "in Korean" in rendered
-    assert "프로세스(process)" in rendered
+    assert "en-US" in rendered
+    assert "localized technical terminology" in rendered
     assert "translate or alter identity fields" in rendered
     assert "response_schema" not in rendered
 
@@ -86,9 +86,9 @@ def test_fake_generation_preserves_provenance_and_is_deterministic(
     assert first.supporting_evidence_ids == [
         item.evidence_id for item in vocabulary_spec.supporting_evidence
     ]
-    assert first.output_language == "ko-KR"
+    assert first.output_language == "en-US"
     assert first.prompt_version == "question-generation-prompt-v2"
-    assert first.generation_config_version == "gemini-generation-config-v2"
+    assert first.generation_config_version == "gemini-generation-config-v3"
     assert first.generated_question_version == "generated-question-v2"
     assert first.usage == usage
     assert len(fake.prompts) == 1
@@ -175,7 +175,7 @@ def test_revision_preserves_schema_and_provenance_but_gets_a_new_id(
         ("question_spec_id", "q_00000000000000000000"),
         ("topic_id", "different-topic"),
         ("input_artifact_hash", "sha256:" + "b" * 64),
-        ("output_language", "en-US"),
+        ("output_language", "ko-KR"),
     ],
 )
 def test_revision_rejects_mismatched_previous_question(
@@ -212,6 +212,7 @@ def test_output_language_is_preserved_and_changes_deterministic_id(
         vocabulary_spec,
         artifact_hash="sha256:" + "a" * 64,
         generator=FakeQuestionGenerator(vocabulary_output),
+        output_language="ko-KR",
     )
     english = generate_question(
         vocabulary_spec,

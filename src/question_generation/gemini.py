@@ -1,5 +1,6 @@
 """Official google-genai structured-output adapter."""
 
+import re
 from typing import Any
 
 import httpx
@@ -81,6 +82,15 @@ class GeminiQuestionGenerator:
             raise MalformedProviderOutputError(
                 "Gemini structured output failed ProviderQuestion validation"
             ) from exc
+
+        if prompt.output_language.startswith("en"):
+            human_text = "\n".join([output.stem, *output.choices, output.explanation])
+            if re.search(
+                r"[\u0400-\u052f\u0600-\u06ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", human_text
+            ):
+                raise MalformedProviderOutputError(
+                    "English source question contains untranslated non-English text"
+                )
 
         usage_metadata = getattr(response, "usage_metadata", None)
         usage = TokenUsage(

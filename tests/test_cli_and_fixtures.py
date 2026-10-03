@@ -101,7 +101,7 @@ def test_default_model_is_current_flash_lite(monkeypatch) -> None:
 def test_default_and_overridden_output_language(monkeypatch) -> None:
     monkeypatch.delenv("QUESTION_GENERATION_LANGUAGE", raising=False)
     assert (
-        load_settings(require_api_key=False).output_language == DEFAULT_OUTPUT_LANGUAGE == "ko-KR"
+        load_settings(require_api_key=False).output_language == DEFAULT_OUTPUT_LANGUAGE == "en-US"
     )
 
     monkeypatch.setenv("QUESTION_GENERATION_LANGUAGE", "en-US")
@@ -117,7 +117,7 @@ def test_cli_dry_run_needs_no_key(
     result = CliRunner().invoke(app, ["generate", "--spec", str(spec_path), "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "question-generation-prompt-v2" in result.output
-    assert "output language is ko-KR" in result.output
+    assert "output language is en-US" in result.output
     assert vocabulary_spec.question_id in result.output
 
 
@@ -400,7 +400,7 @@ def test_real_ml_fixture_generates_both_supported_types(fixture_bundle: FixtureB
     assert all(
         item.input_artifact_hash == fixture_bundle.source_artifact_hash for item in generated
     )
-    assert all(item.output_language == "ko-KR" for item in generated)
+    assert all(item.output_language == "en-US" for item in generated)
 
 
 def test_fixture_file_has_documented_source_hash() -> None:

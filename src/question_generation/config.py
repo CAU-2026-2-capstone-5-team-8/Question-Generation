@@ -1,19 +1,20 @@
 """Centralized, versioned generation settings."""
 
 import os
+import re
 from dataclasses import dataclass
 
 from question_generation.errors import GenerationConfigurationError
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-DEFAULT_OUTPUT_LANGUAGE = "ko-KR"
+DEFAULT_OUTPUT_LANGUAGE = "en-US"
 PROMPT_VERSION = "question-generation-prompt-v2"
 GROUNDED_PROMPT_VERSION = "question-generation-grounded-prompt-v3"
 DISPLAY_GROUNDED_PROMPT_VERSION = "question-generation-grounded-prompt-v4"
 REVISION_PROMPT_VERSION = "question-generation-revision-prompt-v1"
 GROUNDED_REVISION_PROMPT_VERSION = "question-generation-grounded-revision-prompt-v1"
-DISPLAY_GROUNDED_REVISION_PROMPT_VERSION = "question-generation-display-grounded-revision-prompt-v1"
-GENERATION_CONFIG_VERSION = "gemini-generation-config-v2"
+DISPLAY_GROUNDED_REVISION_PROMPT_VERSION = "question-generation-display-grounded-revision-prompt-v2"
+GENERATION_CONFIG_VERSION = "gemini-generation-config-v3"
 GENERATED_QUESTION_VERSION = "generated-question-v2"
 GROUNDED_GENERATED_QUESTION_VERSION = "generated-question-v3"
 DISPLAY_GROUNDED_GENERATED_QUESTION_VERSION = "generated-question-v4"
@@ -40,6 +41,11 @@ def load_settings(*, require_api_key: bool) -> GenerationSettings:
         raise GenerationConfigurationError("QUESTION_GENERATION_MODEL must not be blank")
     if not output_language:
         raise GenerationConfigurationError("QUESTION_GENERATION_LANGUAGE must not be blank")
+    if not re.fullmatch(r"en(?:-[A-Za-z]{2,8})?", output_language):
+        raise GenerationConfigurationError(
+            "QUESTION_GENERATION_LANGUAGE must be English (for example en-US); "
+            "Korean translation belongs to the presentation layer"
+        )
     if require_api_key and api_key is None:
         raise GenerationConfigurationError(
             "GEMINI_API_KEY is required for generation; render-prompt and --dry-run need no key"

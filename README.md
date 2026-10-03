@@ -50,11 +50,15 @@ source the file in your shell.
 ```text
 GEMINI_API_KEY=                 # required only for a live generate call
 QUESTION_GENERATION_MODEL=gemini-3.5-flash-lite
-QUESTION_GENERATION_LANGUAGE=ko-KR
+QUESTION_GENERATION_LANGUAGE=en-US
 ```
 
 The default model and output language are centralized in `question_generation.config`. The output
-language defaults to `ko-KR` and can be overridden independently from the provider model.
+language defaults to `en-US`; CLI generation and revision require an English locale (for example
+`en-US` or `en-GB`). An existing `.env` with `ko-KR` must be updated before using the CLI.
+`gemini-generation-config-v3` records this policy. Historical Korean artifacts and their review
+identities are preserved. Optional Korean display translation belongs to the frontend presentation
+layer and does not change the English source question, choice IDs, answer key, or concept IDs.
 
 ## Input contract
 
@@ -75,7 +79,9 @@ The adapter also hashes the exact input artifact bytes. It never imports ML Pyth
 chooses a replacement spec.
 
 Grounded comprehension requires an ML `generation-grounding-v1` or `generation-grounding-v2` JSON
-artifact. V1 binds one exact 600–1,800 character canonical substring. V2 preserves that role as
+artifact. V1 binds one exact 600–1,800 character canonical English analysis substring (`en_text`
+when present, otherwise original English `text`), while the document content hash still identifies
+the collected original and the canonical file hash binds both fields. V2 preserves that role as
 `source_passage_text` and adds separately hashed `display_passage_text` under the reviewed,
 source-hash-bound `pdf-display-normalization-v1` policy. Both strict local contracts bind the exact
 QuestionSpec and blueprint, document/book/source identities, document and source hashes,
@@ -121,10 +127,9 @@ unavailable, provider error, malformed structured output, or deterministic valid
 concept IDs, difficulty rationale, evidence summary, evidence types/IDs, and supporting book IDs.
 It does not send a whole topic list, taxonomy, or raw book prose.
 
-The configured output language is authoritative. For the default `ko-KR`, the stem, choices, and
-explanation are written in Korean while canonical concept/topic identifiers remain unchanged.
-Natural Korean technical terms are preferred; an English term may appear at first mention or when
-the translation is ambiguous, without mechanically annotating every term.
+The configured English locale is authoritative. The stem, choices, explanation, and revision
+instructions use English while canonical concept/topic identifiers remain unchanged. The Gemini
+adapter rejects untranslated Korean/CJK text in English question bodies before finalization.
 
 Evidence metadata proves why ML selected the target; it is not source text. The prompt prohibits
 quotations and book/page/chapter claims because those claims cannot be grounded from identifiers
@@ -264,7 +269,7 @@ existing ungrounded v2 revision path and its prompt remain unchanged.
 
 Display-grounded v4 revision uses the same command with `generation-grounding-v2` and a preserved
 `generated-question-v4` input. It uses
-`question-generation-display-grounded-revision-prompt-v1`, sends the display passage only as the
+`question-generation-display-grounded-revision-prompt-v2`, sends the display passage only as the
 factual basis, and accepts provider output only for `stem`, `choices`, `correct_choice_index`, and
 `explanation`. Finalization copies the validated previous `passage` byte-for-byte and preserves all
 raw/display hashes, normalization policy, source document identity, and grounding artifact hash.
@@ -378,3 +383,35 @@ Backend currently imports only `generated-question-v2`, Level 1 vocabulary/backg
 empty source-document IDs. It therefore rejects grounded v3 and v4 by design. Supporting the final
 grounded contract later requires an explicit Backend update; this repository does not weaken the
 current importer.
+
+
+## 개념별 진단 v2
+
+[개편 계획](docs/concept-assessment-plan.md)에 따라 기존 명령과 분리된 `concept` 명령을 제공합니다.
+ML의 `build-concept-assessment`가 실제 목차 근거를 연결한 6개 개념 × 3개 수행 목표를 생성합니다.
+`concept-question-spec-v2`는 종전 용어·배경지식·독해 할당을 사용하지 않습니다.
+`generated-question-v5`는 사전 지식 진단을 위한 정의·적용·추론 선택형 문항입니다.
+추론 선택형 문항의 정답을 자유 서술 능력으로 해석하지 않습니다. 설계 난도는 검증된 심리측정 난도가 아닙니다.
+
+```sh
+# ML 저장소에서 먼저 실행
+uv run bookmatch-ml build-concept-assessment --data-dir ../Data-Pipeline/data/processed --output data/output/concept-assessment-v2/blueprint.json
+
+# 이 저장소에서: API를 호출하지 않는 프롬프트 확인
+uv run bookmatch-question-generation concept generate --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json --output-dir data/generated/concept-assessment-v2 --dry-run
+
+# 외부 전송에 승인된 경우에만 실제 Gemini 생성. 기존 영어 원문 정책을 유지한다.
+uv run bookmatch-question-generation concept generate --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json --output-dir data/generated/concept-assessment-v2
+
+# 외부 전송 없는 원본 로컬 초안. Gemini 생성이나 사람 승인으로 표시하지 않는다.
+uv run bookmatch-question-generation concept local-drafts --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json --drafts examples/concept-local-drafts.json --output-dir data/generated/concept-assessment-local-v2
+```
+
+출력에는 질문·보기·정답·해설과 문항 목표를 비교할 `review.md`가 포함됩니다. 저장된 후보는 원본 설계서·목표 해시를 검증하고 재사용하며, 변경된 로컬 초안은 새 출력 폴더에 보존합니다. JSON 구조 검사는 수학적 정확성이나 교육적 타당성에 대한 사람 검토를 대신하지 않습니다. 사람이 검토한 기존 `HumanQuestionReview` JSONL에서 approve/correct=true를 확인해야 Backend에 등록합니다. 실제 후보에 AI가 사람 승인 기록을 만들어 넣지 않습니다.
+
+2026-10-03: 외부 생성 호출은 자동 승인 검토에서 보류됐습니다. 로컬 초안 18개를 별도 폴더에 만들었으며 사람 검토 전입니다. 외부 생성 결과와 구분하여 `generation_model=codex-local-draft`를 기록합니다.
+## 문항의 Markdown·수식 표시
+
+개념 문항의 텍스트 필드는 가벼운 Markdown과 LaTeX를 사용합니다. JSON 구조와 정답·개념 계약은 유지합니다.
+생성 프롬프트는 `concept-question-generation-prompt-v2`이며 v1 산출물도 읽을 수 있습니다.
+표기 규칙과 생성 후 실제 렌더링 검사 명령은 [문제 본문 형식](docs/question-content-format.md)을 참고하세요.
