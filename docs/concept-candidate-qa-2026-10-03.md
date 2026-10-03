@@ -53,3 +53,20 @@ basis / meaning의 “Which two conditions must …”는 필요조건만 고르
 
 사람 검토 결과를 실제 `HumanQuestionReview`로 받은 후 승인된 생성 ID만 import한다. 사전 검토 결과를
 `approve`로 바꾸거나 검토자 이름·시간을 만들어 넣지 않는다. 이전 발급 snapshot과 사용자 응답은 보존한다.
+
+## 사람 검토표 준비
+
+`concept prepare-review`로 `data/generated/concept-human-review-v1/`에 문항 자료와 빈
+`reviews.jsonl`, 후보 범위의 `coverage.json`을 생성했다. 실제 후보 18개를 다시 검사한 결과
+6개 개념 × 3개 수행 목표에 각각 후보 1개, 미검토 18개, 승인 조건 충족 0개다.
+이 수치는 해당 후보와 판정표의 현황이며 활성 bank의 문항 수를 뜻하지 않는다.
+
+검토자는 `review.md` 안내에 따라 판정을 입력하고 `concept review-status`로 현황을 확인한다.
+완료한 행은 기존 HumanQuestionReview 계약을 따르며, null이 남은 행은 등록에 사용할 수 없다.
+일부 문항만 먼저 등록할 경우 완료된 approve/correct=true 행만 별도 등록용 JSONL로 전달한다.
+명령은 후보 내용·판정값·실제 bank를 수정하지 않는다. 자세한 실행 예시는 README에 있다.
+
+후속 검증: 전체 148개 통과, 외부 API live 2개 제외, Ruff/형식 검사 통과.
+추가한 21개 검사는 미완료 판정, 중복·누락·이전 생성 ID, 재해시한 잘못된 설계 메타데이터,
+작성 중인 검토표 보존과 기존 리뷰 계약 호환성을 다룬다. 테스트의 승인 판정은 synthetic 문항에만
+사용했으며 실제 18개 문항에 대한 사람 승인 기록은 작성하지 않았다.

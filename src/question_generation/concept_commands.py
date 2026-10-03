@@ -17,6 +17,12 @@ from question_generation.concept_generation import (
     render_concept_prompt,
     write_review_packet,
 )
+from question_generation.concept_review import (
+    load_candidates,
+    load_worksheet,
+    prepare_review,
+    review_status,
+)
 from question_generation.config import load_settings
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -110,17 +116,42 @@ def review(
     output_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
 ):
     """Revalidate all saved candidates and rebuild a reviewable packet."""
-    bank = ConceptBlueprint.model_validate_json(blueprint.read_text())
-    questions = [
-        ConceptGeneratedQuestion.model_validate_json(
-            (output_dir / f"{s.question_id}.json").read_text()
-        )
-        for s in bank.question_specs
-    ]
-    if any(
-        q.input_artifact_hash != file_hash(blueprint) or q.question_spec_id != s.question_id
-        for q, s in zip(questions, bank.question_specs, strict=True)
-    ):
-        raise typer.BadParameter("saved question belongs to another blueprint")
+    try:
+        bank, questions = load_candidates(blueprint, output_dir)
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
     write_review_packet(bank, questions, output_dir / "review.md")
     typer.echo(f"{len(questions)} candidates; human approval pending")
+
+
+@app.command("prepare-review")
+def prepare_review_command(
+    blueprint: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    candidates_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    review_dir: Annotated[Path, typer.Option()],
+):
+    """Create a new packet and blank human worksheet, preserving existing review work."""
+    try:
+        report = prepare_review(blueprint, candidates_dir, review_dir)
+    except FileExistsError as exc:
+        raise typer.BadParameter("review directory exists; choose a new directory") from exc
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"{report['candidate_count']} candidates; blank worksheet saved to {review_dir}")
+
+
+@app.command("review-status")
+def review_status_command(
+    blueprint: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    candidates_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    reviews: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+):
+    """Read a version-bound worksheet and report coverage without changing the bank."""
+    import json
+
+    try:
+        _, questions = load_candidates(blueprint, candidates_dir)
+        report = review_status(questions, load_worksheet(reviews))
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))

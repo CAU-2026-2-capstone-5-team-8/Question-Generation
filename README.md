@@ -410,6 +410,31 @@ uv run bookmatch-question-generation concept local-drafts --blueprint ../ML/data
 
 출력에는 질문·보기·정답·해설과 문항 목표를 비교할 `review.md`가 포함됩니다. 저장된 후보는 원본 설계서·목표 해시를 검증하고 재사용하며, 변경된 로컬 초안은 새 출력 폴더에 보존합니다. JSON 구조 검사는 수학적 정확성이나 교육적 타당성에 대한 사람 검토를 대신하지 않습니다. 사람이 검토한 기존 `HumanQuestionReview` JSONL에서 approve/correct=true를 확인해야 Backend에 등록합니다. 실제 후보에 AI가 사람 승인 기록을 만들어 넣지 않습니다.
 
+사람 검토를 시작할 때는 별도 폴더에 문항과 빈 판정표를 만듭니다.
+
+```sh
+uv run bookmatch-question-generation concept prepare-review \
+  --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json \
+  --candidates-dir data/generated/concept-assessment-reviewed-draft-v3 \
+  --review-dir data/generated/concept-human-review-v1
+
+uv run bookmatch-question-generation concept review-status \
+  --blueprint ../ML/data/output/concept-assessment-v2/blueprint.json \
+  --candidates-dir data/generated/concept-assessment-reviewed-draft-v3 \
+  --reviews data/generated/concept-human-review-v1/reviews.jsonl
+```
+
+`prepare-review`는 `review.md`, 미검토 항목을 `null`로 둔 `reviews.jsonl`, 생성 시점의
+`coverage.json`을 만듭니다. 기존 검토 폴더는 덮어쓰지 않습니다. 검토자는 문항과 작성 안내를 읽고
+직접 판정을 입력합니다. 모든 필드를 채운 행은 기존 `HumanQuestionReview` 계약과 같으며,
+미완료 행은 등록용 review가 아닙니다. 편집 후 `review-status`는 현황을 표준 출력으로 출력합니다.
+검토 파일을 수정하거나 실제 bank를 조회·등록하지 않습니다.
+
+검사에서는 설계서 해시·메타데이터, 후보 파일 집합, 생성 ID와 판정표의 일대일 대응을 확인합니다.
+중복·누락·이전 버전 ID는 오류로 처리하며, 일부만 작성한 판정은 pending으로 집계합니다.
+`approval_criteria_met_count`는 완료된 approve/correct=true 행의 수이며 사람의 신원을 인증하거나
+수학적 정확성을 자동 보증하는 값이 아닙니다. 실제 bank의 문항 수나 평가 범위로 해석하지 않습니다.
+
 2026-10-03: 외부 생성 호출은 자동 승인 검토에서 보류됐습니다. 로컬 초안 18개를 별도 폴더에 만들었으며 사람 검토 전입니다. 외부 생성 결과와 구분하여 `generation_model=codex-local-draft`를 기록합니다.
 ## 문항의 Markdown·수식 표시
 
