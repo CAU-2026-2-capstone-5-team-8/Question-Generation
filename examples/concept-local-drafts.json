@@ -1,0 +1,236 @@
+[
+  {
+    "concept_id": "matrix",
+    "ability": "meaning",
+    "stem": "A matrix has 3 rows and 2 columns. Which description is correct?",
+    "choices": [
+      "It is \\(2\\times 3\\), and its first index denotes the column.",
+      "It is \\(3\\times 2\\), and its first index denotes the row.",
+      "It is \\(6\\times 1\\) because it contains six entries.",
+      "It is square because every entry has two indices."
+    ],
+    "correct_choice_index": 1,
+    "explanation": "The correct description is \\(3\\times 2\\): rows come first, then columns. The first option reverses the convention. Six entries do not make the matrix \\(6\\times 1\\). Two indices do not imply a square matrix."
+  },
+  {
+    "concept_id": "matrix",
+    "ability": "application",
+    "stem": "Let the matrices be\n\\[\nA=\\begin{bmatrix}1&2\\\\0&1\\end{bmatrix},\\qquad B=\\begin{bmatrix}2&0\\\\3&1\\end{bmatrix}.\n\\]\nWhat is entry \\((1,1)\\) of \\(AB\\)?",
+    "choices": [
+      "\\(2\\)",
+      "\\(6\\)",
+      "\\(8\\)",
+      "\\(3\\)"
+    ],
+    "correct_choice_index": 2,
+    "explanation": "Row 1 of \\(A\\) dotted with column 1 of \\(B\\) gives \\(1\\cdot 2+2\\cdot 3=8\\). The value \\(2\\) uses only the first term, \\(6\\) uses only the second term, and \\(3\\) is an entry of \\(B\\) rather than the required product entry."
+  },
+  {
+    "concept_id": "matrix",
+    "ability": "reasoning",
+    "stem": "Let the matrices be\n\\[\nA=\\begin{bmatrix}0&1\\\\0&0\\end{bmatrix},\\qquad B=\\begin{bmatrix}0&0\\\\1&0\\end{bmatrix}.\n\\]\nWhich statement correctly uses this pair to judge commutativity?",
+    "choices": [
+      "\\(AB=BA=\\begin{bmatrix}1&0\\\\0&1\\end{bmatrix}\\), so the two products are equal.",
+      "\\(AB=BA=\\begin{bmatrix}0&0\\\\0&0\\end{bmatrix}\\), so the two products are equal.",
+      "\\(AB=\\begin{bmatrix}0&0\\\\0&1\\end{bmatrix}\\) and \\(BA=\\begin{bmatrix}1&0\\\\0&0\\end{bmatrix}\\), so the products differ.",
+      "\\(AB=\\begin{bmatrix}1&0\\\\0&0\\end{bmatrix}\\) and \\(BA=\\begin{bmatrix}0&0\\\\0&1\\end{bmatrix}\\), so the products differ."
+    ],
+    "correct_choice_index": 3,
+    "explanation": "Direct multiplication gives \\(AB=\\operatorname{diag}(1,0)\\) and \\(BA=\\operatorname{diag}(0,1)\\), as in the fourth choice. The first two choices incorrectly make both products equal. The third reverses the two products. This pair is a counterexample to commutativity."
+  },
+  {
+    "concept_id": "vector",
+    "ability": "meaning",
+    "stem": "Which condition is sufficient and necessary for two vectors in \\(\\mathbb{R}^n\\) to be equal?",
+    "choices": [
+      "Every pair of corresponding components is equal.",
+      "Their lengths are equal.",
+      "They point in the same direction.",
+      "The sums of their components are equal."
+    ],
+    "correct_choice_index": 0,
+    "explanation": "Vector equality means equality of all corresponding components. Equal length, direction alone, or component sums can hold for different vectors; each of the other conditions loses component information."
+  },
+  {
+    "concept_id": "vector",
+    "ability": "application",
+    "stem": "Let \\(u=(1,2)\\) and \\(v=(-1,1)\\). What is \\(2u-3v\\)?",
+    "choices": [
+      "\\((-1,7)\\)",
+      "\\((5,7)\\)",
+      "\\((5,1)\\)",
+      "\\((-1,1)\\)"
+    ],
+    "correct_choice_index": 2,
+    "explanation": "\\(2u=(2,4)\\) and \\(-3v=(3,-3)\\), giving \\((5,1)\\). \\((-1,7)\\) uses \\(2u+3v\\). \\((5,7)\\) loses the negative sign in the second component. \\((-1,1)\\) loses the negative sign when multiplying the first component of \\(v\\)."
+  },
+  {
+    "concept_id": "vector",
+    "ability": "reasoning",
+    "stem": "Let \\(u=(1,0,1)\\), \\(v=(0,1,1)\\), and \\(w=(2,3,5)\\). Which claim about \\(w\\) is justified?",
+    "choices": [
+      "\\(w\\) is outside the span because \\(u\\) and \\(v\\) each have a zero component.",
+      "\\(w\\) is in the span because \\(w=2u+3v\\).",
+      "\\(w\\) is in the span because any two vectors span \\(\\mathbb{R}^3\\).",
+      "\\(w\\) is outside the span because its components are larger than those of \\(u\\) and \\(v\\)."
+    ],
+    "correct_choice_index": 1,
+    "explanation": "\\(2u+3v=(2,3,5)\\), which proves membership. Zero components and component magnitudes do not prevent linear combinations. Two vectors cannot span all of \\(\\mathbb{R}^3\\), so the third reason is invalid."
+  },
+  {
+    "concept_id": "linear system",
+    "ability": "meaning",
+    "stem": "The equations \\(x+y=2\\) and \\(2x+2y=4\\) define which type of solution set?",
+    "choices": [
+      "No solutions, because there are two equations.",
+      "Exactly one solution, because there are two unknowns.",
+      "Exactly two solutions, one for each equation.",
+      "Infinitely many solutions, because the equations describe the same constraint."
+    ],
+    "correct_choice_index": 3,
+    "explanation": "The second equation is twice the first. All pairs \\((t,2-t)\\) solve both equations. Counting equations or unknowns alone does not establish a unique solution, inconsistency, or two solutions."
+  },
+  {
+    "concept_id": "linear system",
+    "ability": "application",
+    "stem": "Solve \\(x+y=5\\) and \\(x-y=1\\). Which pair \\((x,y)\\) satisfies both equations?",
+    "choices": [
+      "\\((3,2)\\)",
+      "\\((2,3)\\)",
+      "\\((4,1)\\)",
+      "\\((1,4)\\)"
+    ],
+    "correct_choice_index": 0,
+    "explanation": "Adding the equations gives \\(2x=6\\), so \\(x=3\\) and \\(y=2\\). Each distractor sums to \\(5\\) but gives \\(x-y=-1\\), \\(3\\), or \\(-3\\) rather than \\(1\\)."
+  },
+  {
+    "concept_id": "linear system",
+    "ability": "reasoning",
+    "stem": "An augmented matrix is in row-echelon form:\n\\[\n\\left[\\begin{array}{cc|c}1&2&3\\\\0&0&1\\end{array}\\right].\n\\]\nThe last column contains constants. Which conclusion is justified?",
+    "choices": [
+      "The system has a unique solution because each row is nonzero.",
+      "The system has infinitely many solutions because a coefficient column lacks a pivot.",
+      "The system has no solution because its last row asserts \\(0=1\\).",
+      "The system has the zero solution because the second coefficient row is zero."
+    ],
+    "correct_choice_index": 2,
+    "explanation": "The last row represents \\(0x+0y=1\\), which is impossible. A nonzero augmented row is not necessarily a variable pivot, and a missing coefficient pivot does not overcome inconsistency. The zero vector also fails the contradictory equation."
+  },
+  {
+    "concept_id": "linear independence",
+    "ability": "meaning",
+    "stem": "A finite set \\(\\{v_1,\\ldots,v_k\\}\\) is linearly independent precisely when which condition holds?",
+    "choices": [
+      "No two vectors have the same components.",
+      "\\(c_1v_1+\\cdots+c_kv_k=0\\) implies that every coefficient is zero.",
+      "Every vector is nonzero.",
+      "The vectors span the entire ambient space."
+    ],
+    "correct_choice_index": 1,
+    "explanation": "The zero linear combination must have only the trivial coefficient solution. Distinct nonzero vectors can still be dependent. Spanning concerns coverage of a space, not independence alone."
+  },
+  {
+    "concept_id": "linear independence",
+    "ability": "application",
+    "stem": "Let \\(u=(1,2)\\) and \\(v=(2,4)\\). Which calculation demonstrates linear dependence?",
+    "choices": [
+      "\\(u+v=(3,6)\\).",
+      "\\(u-v=(-1,-2)\\).",
+      "\\(0u+0v=(0,0)\\).",
+      "\\(2u-v=(0,0)\\)."
+    ],
+    "correct_choice_index": 3,
+    "explanation": "The nonzero coefficients \\(2\\) and \\(-1\\) give a zero combination, proving dependence. The first two combinations are nonzero, while the third is the trivial zero combination available for every vector set."
+  },
+  {
+    "concept_id": "linear independence",
+    "ability": "reasoning",
+    "stem": "In \\(\\mathbb{R}^2\\) let \\(v_1=(1,0)\\), \\(v_2=(0,1)\\), and \\(v_3=(1,1)\\). No pair is parallel. Which conclusion is valid?",
+    "choices": [
+      "The set is dependent because \\(v_1+v_2-v_3=0\\) is a nontrivial relation.",
+      "The set is independent because no pair is parallel.",
+      "The set is independent because none of the vectors is zero.",
+      "The set is dependent because \\(v_1\\) and \\(v_2\\) are parallel."
+    ],
+    "correct_choice_index": 0,
+    "explanation": "The displayed relation has nonzero coefficients and proves joint dependence. Pairwise nonparallel vectors and nonzero vectors do not guarantee independence of a larger set. \\(v_1\\) and \\(v_2\\) are not parallel."
+  },
+  {
+    "concept_id": "basis",
+    "ability": "meaning",
+    "stem": "Which pair of conditions is necessary and sufficient for a finite set to be a basis of a vector space \\(V\\)?",
+    "choices": [
+      "Contain nonzero vectors and have distinct elements.",
+      "Span \\(V\\) and contain at least one vector.",
+      "Span \\(V\\) and be linearly independent.",
+      "Be linearly independent and have any number of elements."
+    ],
+    "correct_choice_index": 2,
+    "explanation": "A basis both spans \\(V\\) and is independent. Distinct nonzero elements need not span or be independent. Spanning alone allows redundancy; independence alone does not ensure that every vector in \\(V\\) is covered."
+  },
+  {
+    "concept_id": "basis",
+    "ability": "application",
+    "stem": "An ordered basis of \\(\\mathbb{R}^2\\) is \\(b_1=(1,1)\\), \\(b_2=(1,-1)\\). What are the coordinates of \\((4,2)\\) in this basis?",
+    "choices": [
+      "\\((4,2)\\)",
+      "\\((3,1)\\)",
+      "\\((1,3)\\)",
+      "\\((2,4)\\)"
+    ],
+    "correct_choice_index": 1,
+    "explanation": "Writing \\((4,2)=c_1b_1+c_2b_2\\) yields \\(c_1+c_2=4\\) and \\(c_1-c_2=2\\), hence \\((3,1)\\). \\((4,2)\\) are standard coordinates. \\((1,3)\\) swaps the basis coefficients, and \\((2,4)\\) reconstructs \\((6,-2)\\)."
+  },
+  {
+    "concept_id": "basis",
+    "ability": "reasoning",
+    "stem": "Let \\(\\{b_1,b_2\\}\\) be a basis of \\(\\mathbb{R}^2\\) and let \\(w=b_1+b_2\\). For \\(C=\\{b_1,b_2,w\\}\\), which conclusion is justified?",
+    "choices": [
+      "\\(C\\) is a basis: the added vector makes the original spanning set larger.",
+      "\\(C\\) is independent: every vector in \\(C\\) is nonzero and distinct.",
+      "\\(C\\) does not span \\(\\mathbb{R}^2\\): it has more vectors than the original basis.",
+      "\\(C\\) spans \\(\\mathbb{R}^2\\) but is dependent: \\(b_1+b_2-w=0\\) is a nontrivial relation."
+    ],
+    "correct_choice_index": 3,
+    "explanation": "\\(C\\) contains the original spanning set, so it still spans \\(\\mathbb{R}^2\\). If its third member is denoted \\(w\\), the relation \\(b_1+b_2-w=0\\) has coefficients \\((1,1,-1)\\), proving dependence. An added nonzero vector does not remove redundancy."
+  },
+  {
+    "concept_id": "orthogonality",
+    "ability": "meaning",
+    "stem": "For vectors in \\(\\mathbb{R}^n\\) with the usual dot product, which condition defines orthogonality?",
+    "choices": [
+      "Their dot product is zero.",
+      "Both vectors have length one.",
+      "Their lengths are equal.",
+      "They are linearly independent."
+    ],
+    "correct_choice_index": 0,
+    "explanation": "Orthogonality means a zero dot product. Unit length defines normalization, equal length imposes no angle condition, and independent vectors need not be perpendicular."
+  },
+  {
+    "concept_id": "orthogonality",
+    "ability": "application",
+    "stem": "For \\(u=(1,2)\\) and \\(v=(k,-1)\\), which value of \\(k\\) makes the vectors orthogonal?",
+    "choices": [
+      "\\(-2\\)",
+      "\\(1\\)",
+      "\\(2\\)",
+      "\\(-1\\)"
+    ],
+    "correct_choice_index": 2,
+    "explanation": "Their dot product is \\(k-2\\), so \\(k=2\\). For \\(k=-2\\), \\(1\\), and \\(-1\\) the dot products are \\(-4\\), \\(-1\\), and \\(-3\\) respectively, all nonzero."
+  },
+  {
+    "concept_id": "orthogonality",
+    "ability": "reasoning",
+    "stem": "Let \\(v_1,\\ldots,v_k\\) be nonzero mutually orthogonal vectors. Why does a relation \\(c_1v_1+\\cdots+c_kv_k=0\\) force all coefficients to be zero?",
+    "choices": [
+      "All orthogonal vectors must have norm one.",
+      "Taking the dot product with \\(v_j\\) gives \\(c_j\\lVert v_j\\rVert^2=0\\), and \\(\\lVert v_j\\rVert^2\\) is positive.",
+      "Each vector is nonzero, so every set containing them is independent.",
+      "Taking the dot product makes every term zero, including the term involving \\(v_j\\)."
+    ],
+    "correct_choice_index": 1,
+    "explanation": "Orthogonality cancels the cross terms, leaving \\(c_j\\) times the positive squared norm of the nonzero vector \\(v_j\\). Thus \\(c_j=0\\) for every \\(j\\). Unit norms are not required, nonzero vectors alone can be dependent, and the self term does not vanish."
+  }
+]

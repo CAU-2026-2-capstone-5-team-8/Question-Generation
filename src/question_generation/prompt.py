@@ -85,7 +85,8 @@ rewrite, translate, summarize, or repeat it in the returned stem. Address every 
 reviewer feedback point while preserving comprehension/apply at Level 2. The revised question must
 apply a rule from the passage to a new situation and must not be answerable by copying the existing
 2x3 example or matching an identical string. Do not require outside knowledge. Produce exactly
-four natural Korean, mutually distinct choices with exactly one correct answer. Every distractor
+four natural, mutually distinct choices in the authoritative output language with exactly one
+correct answer. Every distractor
 must reflect a plausible misconception, such as confusing row and column order, notation and
 reading order, or dimensions and entry count. Do not hardcode those examples when they do not fit
 the question. Never use a typo, nonsense word, broken grammar, answer length, an absolute phrase,

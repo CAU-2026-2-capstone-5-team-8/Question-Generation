@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from question_generation.concept_commands import app as concept_app
 from question_generation.config import load_settings
 from question_generation.errors import InputContractError, QuestionGenerationError
 from question_generation.gemini import GeminiQuestionGenerator
@@ -377,6 +378,9 @@ def revise(
         typer.echo(f"Output: {resolved_output}")
     except (QuestionGenerationError, ValueError) as exc:
         _fail(exc)
+
+
+app.add_typer(concept_app, name="concept")
 
 
 if __name__ == "__main__":

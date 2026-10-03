@@ -355,7 +355,7 @@ def test_v4_revision_prompt_uses_display_passage_and_distractor_requirements() -
     rendered = prompt.render()
     normalized = " ".join(rendered.split())
 
-    assert prompt.prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+    assert prompt.prompt_version == "question-generation-display-grounded-revision-prompt-v2"
     assert rendered.count(json.dumps(DISPLAY_PASSAGE, ensure_ascii=False)) == 1
     assert json.dumps(SOURCE_PASSAGE, ensure_ascii=False) not in rendered
     assert previous.generated_question_id in rendered
@@ -396,7 +396,7 @@ def test_v4_revision_preserves_passage_and_provenance_with_new_id() -> None:
     )
 
     assert revised.generated_question_version == "generated-question-v4"
-    assert revised.prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+    assert revised.prompt_version == "question-generation-display-grounded-revision-prompt-v2"
     assert revised.generated_question_id != previous.generated_question_id
     assert revised.passage.encode() == previous.passage.encode()
     assert revised.question_spec_id == previous.question_spec_id
@@ -577,7 +577,7 @@ def test_cli_revises_v4_without_overwriting_inputs(
     assert previous_path.read_bytes() == previous_bytes
     assert grounding_path.read_bytes() == grounding_bytes
     assert (
-        fake.prompts[0].prompt_version == "question-generation-display-grounded-revision-prompt-v1"
+        fake.prompts[0].prompt_version == "question-generation-display-grounded-revision-prompt-v2"
     )
     assert list(output_path.parent.glob(f".{output_path.name}.*.tmp")) == []
 

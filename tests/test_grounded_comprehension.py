@@ -322,7 +322,7 @@ def test_grounded_revision_preserves_provenance_and_gets_new_id() -> None:
     assert revised.question_spec_id == previous.question_spec_id
     assert revised.input_artifact_hash == previous.input_artifact_hash
     assert revised.source_document_ids == previous.source_document_ids
-    assert revised.stem.startswith(f"지문:\n{grounding.passage_text}\n\n질문:\n")
+    assert revised.stem.startswith(f"Passage:\n{grounding.passage_text}\n\nQuestion:\n")
     assert revised.stem.count(grounding.passage_text) == 1
     assert len(fake.prompts) == 1
 

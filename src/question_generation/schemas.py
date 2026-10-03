@@ -589,7 +589,7 @@ class GeneratedQuestionV4(StrictModel):
 ReviewStatus = Literal["approve", "reject", "needs_revision"]
 
 
-class HumanQuestionReview(StrictModel):
+class QuestionReviewJudgment(StrictModel):
     generated_question_id: str = Field(pattern=r"^gq_[0-9a-f]{32}$")
     status: ReviewStatus
     correct: bool
@@ -598,6 +598,22 @@ class HumanQuestionReview(StrictModel):
     distractor_quality: int = Field(ge=1, le=5)
     explanation_quality: int = Field(ge=1, le=5)
     notes: str = ""
+
+
+class HumanQuestionReview(QuestionReviewJudgment):
+    """Legacy human-authored review contract, unchanged on the wire."""
+
+
+class AiQuestionReview(StrictModel):
+    """Explicit AI content judgment; not a human review or empirical validation."""
+
+    review_version: Literal["ai-question-review-v1"]
+    reviewer_type: Literal["ai"]
+    reviewer_name: str
+    validation_scope: Literal["content-only"]
+    review: QuestionReviewJudgment
+
+    _validate_reviewer = field_validator("reviewer_name")(_nonblank)
 
 
 class FixtureBundle(StrictModel):
