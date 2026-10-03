@@ -158,7 +158,7 @@
   {
     "concept_id": "basis",
     "ability": "meaning",
-    "stem": "Which two conditions must a finite set satisfy to be a basis of a vector space \\(V\\)?",
+    "stem": "Which pair of conditions is necessary and sufficient for a finite set to be a basis of a vector space \\(V\\)?",
     "choices": [
       "Contain nonzero vectors and have distinct elements.",
       "Span \\(V\\) and contain at least one vector.",
