@@ -533,7 +533,7 @@ inline 구분자로 바꾸되 공식 문자는 유지한다. 원래 모델 출�
 
 `question_generation.translation.translate_question` produces separately stored Korean prompt,
 passage and choices from immutable English display content. Math and numeric literals are protected
-with exact placeholders; per-field order, choice count, duplicate choices and content format are
+with exact placeholders; per-field preservation, choice count, duplicate choices and content format are
 checked. A separate Gemini call checks semantic equivalence, numbered-choice order and absence of
 added hints. Neither answer keys, explanations nor user data are sent. Original content, labels,
 correct-choice indices and generated IDs stay intact.
@@ -542,3 +542,16 @@ Exact source/model/implementation cache identity avoids repeated calls. Rejected
 not published. Backend owns the durable queue, lease, database publication and snapshot matching;
 its adapter also runs the actual Frontend renderer before publication. The same model performs
 translation and review in separate calls, not human review or independent-model consensus.
+
+A failed format/meaning check permits one fresh correction using the rejected draft and actual
+failure feedback, followed by the same complete validation and a new semantic review. The first
+draft/review are preserved in separate files. A second failure stays unpublished; retrying the same
+cache never forces approval. Provider/transport errors remain bounded by the SDK retry policy.
+Mathematical blocks may move within a sentence for Korean grammar, while each protected block must
+remain in the same field exactly once. Review checks that conditions/relationships remain equivalent.
+Intentionally false choices are preserved as written; translation must not correct their content.
+Spelled-out source counts can use digits, with matching values and a per-field occurrence budget.
+Original numeric/TeX literals must remain unchanged. Review checks negation and relationships;
+for example, `nonzero` may appear as `0이 아닌` but must not become `0`.
+The reviewer uses low thinking and must identify an actual language difference rather than reject
+a false statement that was already false in the original distractor.
