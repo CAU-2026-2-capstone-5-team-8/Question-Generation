@@ -528,3 +528,17 @@ inline 구분자로 바꾸되 공식 문자는 유지한다. 원래 모델 출�
 별도의 전체 재검토가 필요하다. 원래 생성·검토 파일은 보존한다. 중단 후 재실행은
 같은 입력과 구현의 저장된 보완 문항을 재사용하며, 이미 보완한 묶음에 두 번째 자동
 보완을 적용하지 않는다. 이 정책의 모델 정확성이나 측정 타당성은 별도 평가 대상이다.
+
+### Korean display translations
+
+`question_generation.translation.translate_question` produces separately stored Korean prompt,
+passage and choices from immutable English display content. Math and numeric literals are protected
+with exact placeholders; per-field order, choice count, duplicate choices and content format are
+checked. A separate Gemini call checks semantic equivalence, numbered-choice order and absence of
+added hints. Neither answer keys, explanations nor user data are sent. Original content, labels,
+correct-choice indices and generated IDs stay intact.
+
+Exact source/model/implementation cache identity avoids repeated calls. Rejected translations are
+not published. Backend owns the durable queue, lease, database publication and snapshot matching;
+its adapter also runs the actual Frontend renderer before publication. The same model performs
+translation and review in separate calls, not human review or independent-model consensus.
