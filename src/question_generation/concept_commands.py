@@ -29,6 +29,23 @@ from question_generation.config import load_settings
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
+@app.command("generate-batch")
+def generate_batch_command(
+    blueprint: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    output_dir: Annotated[Path, typer.Option()],
+    max_new: Annotated[int, typer.Option(min=1, max=3)] = 2,
+):
+    """Save a bounded batch and resume exact-input candidates after interruption."""
+    import json
+
+    from question_generation.concept_batch import generate_concept_batch
+
+    report = generate_concept_batch(
+        blueprint, output_dir, load_settings(require_api_key=True), max_new=max_new
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, sort_keys=True))
+
+
 @app.command("local-drafts")
 def local_drafts(
     blueprint: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
