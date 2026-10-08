@@ -104,8 +104,9 @@ def revise_batch(blueprint, candidates, generation_report, review_report, settin
         "previousReviewReportHash": identity["review"],
         "candidateHashes": {p.name: file_hash(p) for p in sorted(output.glob("q_*.json"))},
         "revisedQuestionSpecIds": sorted(q.question_spec_id for q in rejected),
-        "sourceSnapshotId": original["sourceSnapshotId"],
-        "contentReportHash": original["contentReportHash"],
     }
+    for key in ("sourceSnapshotId", "contentReportHash"):
+        if key in original:
+            result[key] = original[key]
     save_json(output / "generation-report.json", result)
     return output / "generation-report.json"

@@ -145,3 +145,23 @@ def test_invalid_numeric_draft_is_corrected_without_approving_bad_draft(tmp_path
     result = translate_question(source, tmp_path, GenerationSettings(api_key="test"), client=client)
     assert result["status"] == "READY" and client.calls == 3
     assert result["text"]["prompt"] == "500은 무엇인가요?"
+
+
+def test_failed_cache_publication_preserves_previous_complete_artifact(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from question_generation.translation import save
+
+    target = tmp_path / "translation.json"
+    save(target, {"status": "READY", "text": "기존 결과"})
+    before = target.read_bytes()
+
+    def interrupted(self, destination):
+        assert json.loads(self.read_text())["text"] == "새 결과"
+        raise OSError("interrupted before atomic publication")
+
+    monkeypatch.setattr(Path, "replace", interrupted)
+    with pytest.raises(OSError, match="interrupted"):
+        save(target, {"status": "READY", "text": "새 결과"})
+    assert target.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [target]

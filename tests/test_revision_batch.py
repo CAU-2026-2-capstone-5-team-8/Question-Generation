@@ -10,10 +10,11 @@ from tests.test_concept_batch import bundle as bundle
 from tests.test_concept_generation import output
 
 
-def reviewed(bundle, rejected=1):
+def reviewed(bundle, rejected=1, source_metadata=True):
     blueprint, directory, settings, _ = bundle
     report = generate_concept_batch(blueprint, directory, settings, max_new=3, client=object())
-    report.update(sourceSnapshotId="synthetic-source", contentReportHash="sha256:" + "e" * 64)
+    if source_metadata:
+        report.update(sourceSnapshotId="synthetic-source", contentReportHash="sha256:" + "e" * 64)
     generation = directory / "generation-report.json"
     save_json(generation, report)
     review = directory / "review"
@@ -45,8 +46,11 @@ def reviewed(bundle, rejected=1):
     return blueprint, directory, generation, review_report, settings
 
 
-def test_repair_changes_only_rejected_content_requires_new_review_and_resumes(bundle, monkeypatch):
-    args = reviewed(bundle)
+@pytest.mark.parametrize("source_metadata", [True, False])
+def test_repair_changes_only_rejected_content_requires_new_review_and_resumes(
+    bundle, monkeypatch, source_metadata
+):
+    args = reviewed(bundle, source_metadata=source_metadata)
     original = {p.name: p.read_bytes() for p in args[1].glob("q_*.json")}
     calls = []
 
@@ -68,6 +72,10 @@ def test_repair_changes_only_rejected_content_requires_new_review_and_resumes(bu
     path = revision_batch.revise_batch(*args, client=SimpleNamespace())
     report = json.loads(path.read_text())
     assert len(calls) == 1 and report["revisionRound"] == 1
+    for key in ("sourceSnapshotId", "contentReportHash"):
+        assert (key in report) == source_metadata
+        if source_metadata:
+            assert report[key] == json.loads(args[2].read_text())[key]
     assert report["contentReview"] == "pending" and report["diagnosisReady"] is False
     assert report["previousGenerationReportHash"] == file_hash(args[2])
     assert {p.name: p.read_bytes() for p in args[1].glob("q_*.json")} == original

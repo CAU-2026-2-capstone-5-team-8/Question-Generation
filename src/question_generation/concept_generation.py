@@ -147,6 +147,7 @@ def generate_concept_question(
                 },
                 ensure_ascii=False,
             )
+        base_prompt = prompt
         usage_totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         for attempt in range(2):
             response = client.models.generate_content(
@@ -207,7 +208,7 @@ def generate_concept_question(
                 # A bounded second authorship call; keep the failed output for audit.
                 # This does not approve content or replace any accepted candidate.
                 prompt = (
-                    render_concept_prompt(spec)
+                    base_prompt
                     + "\n"
                     + json.dumps(
                         {

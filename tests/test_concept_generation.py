@@ -173,7 +173,8 @@ def test_generation_does_not_relabel_saved_v1_output_as_current_prompt(tmp_path,
     assert saved.read_bytes() == original
 
 
-def test_structural_reauthoring_is_bounded_and_keeps_both_raw_outputs(tmp_path):
+@pytest.mark.parametrize("feedback", [None, {"review": {"notes": "Correct the mistaken premise"}}])
+def test_structural_reauthoring_is_bounded_and_keeps_both_raw_outputs(tmp_path, feedback):
     calls = []
     invalid = {**output().model_dump(), "stem": "Compute the value of $x + 2$ when x is three."}
 
@@ -185,9 +186,16 @@ def test_structural_reauthoring_is_bounded_and_keeps_both_raw_outputs(tmp_path):
     client = SimpleNamespace(models=SimpleNamespace(generate_content=respond))
     raw = tmp_path / "question.json"
     question = generate_concept_question(
-        spec(), GenerationSettings(api_key=None), "sha256:" + "b" * 64, client=client, raw_path=raw
+        spec(),
+        GenerationSettings(api_key=None),
+        "sha256:" + "b" * 64,
+        client=client,
+        raw_path=raw,
+        revision_feedback=feedback,
     )
     assert len(calls) == 2 and question.stem == output().stem
+    if feedback is not None:
+        assert all(json.dumps(feedback) in call["contents"] for call in calls)
     assert json.loads(raw.read_text()) == invalid
     assert json.loads(raw.with_suffix(".retry.json").read_text()) == output().model_dump()
     calls.clear()
