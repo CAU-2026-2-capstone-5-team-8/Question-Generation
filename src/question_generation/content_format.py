@@ -15,13 +15,45 @@ Close every math delimiter, brace, and environment. Put long formulas on display
 Formatting must not change mathematical values, distractors, or the correct option."""
 
 
+def canonical_numeric_math(text: str) -> str:
+    """Normalize balanced numeric dollar math only, preserving every math character.
+
+    Currency, alphabetic expressions, unmatched or mixed delimiters are left alone
+    and still fail the existing structural checks. Raw provider output is retained.
+    """
+    tokens = list(re.finditer(r"(?<!\\)\${1,2}", text))
+    if len(tokens) % 2:
+        return text
+    parts = []
+    position = 0
+    for opening, closing in zip(tokens[::2], tokens[1::2], strict=True):
+        math = text[opening.end() : closing.start()]
+        if opening.group() != closing.group() or not re.fullmatch(r"[0-9\s.,+*/<>=^(){}\-]+", math):
+            return text
+        if not re.search(r"[0-9]", math) or (opening.group() == "$" and "\n" in math):
+            return text
+        parts.append(text[position : opening.start()])
+        parts.append(
+            (r"\(" + math + r"\)")
+            if opening.group() == "$"
+            else ("\n" + r"\[" + "\n" + math + "\n" + r"\]" + "\n")
+        )
+        position = closing.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
 def content_format_flags(text: str) -> list[str]:
     flags = []
+    if re.search(r"\\{2,}[()[\]]", text):
+        flags.append("overescaped content")
     if any(ord(c) < 32 and c not in "\n\r" for c in text):
         flags.append("invalid JSON escape in content")
     if re.search(r"</?[A-Za-z][^>]*>|!\[[^]]*\]\(|\[[^]]*\]\(https?://|```", text):
         flags.append("unsupported markup")
     plain = re.sub(r"\\\(.*?\\\)|\\\[.*?\\\]", "", text, flags=re.S)
+    if r"\n" in plain or r"\r" in plain:
+        flags.append("overescaped content")
     if re.search(r"\[\[|\bR\^[0-9a-z]|\b[bcv][0-9]+\b", plain):
         flags.append("unformatted mathematical notation")
     if re.search(r"(?<!\\)\$", text):
@@ -61,3 +93,22 @@ def content_format_flags(text: str) -> list[str]:
     if opening:
         flags.append("unclosed math delimiter")
     return sorted(set(flags))
+
+
+def canonical_math_layout(text: str) -> str:
+    """Use inline delimiters for a one-line expression embedded in prose.
+
+    Preserve every formula character. Standalone display blocks remain display
+    blocks; incomplete or multiline expressions are left for validation.
+    """
+
+    def inline_if_embedded(match):
+        start, end = match.span()
+        before = text[text.rfind("\n", 0, start) + 1 : start]
+        line_end = text.find("\n", end)
+        after = text[end : line_end if line_end >= 0 else len(text)]
+        if before.strip() or after.strip():
+            return r"\(" + match.group(1) + r"\)"
+        return match.group(0)
+
+    return re.sub(r"(?<!\\)\\\[([^\n\r]*?)\\\]", inline_if_embedded, text)

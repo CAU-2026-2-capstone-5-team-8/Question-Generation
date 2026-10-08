@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from question_generation.concept_generation import (
     SYSTEM,
     assemble_question,
     generate_concept_question,
+    quality_flags,
     render_concept_prompt,
 )
 from question_generation.config import GenerationSettings
@@ -64,7 +66,7 @@ def test_reasoning_target_is_supported_and_provider_cannot_change_metadata():
     )
     assert question.ability == "reasoning"
     assert question.cognitive_operation == "infer"
-    assert question.prompt_version == "concept-question-generation-prompt-v2"
+    assert question.prompt_version == "concept-question-generation-prompt-v3"
     assert question.question_spec_hash == content_hash(target.model_dump())
     assert "misconception_targets" in render_concept_prompt(target)
     assert "counterexample" in SYSTEM
@@ -94,6 +96,20 @@ def test_generic_provider_schema_keeps_old_provider_contract_unchanged():
         "correct_choice_index",
         "explanation",
     }
+
+
+def test_json_schema_text_is_validated_when_sdk_does_not_populate_parsed():
+    response = SimpleNamespace(parsed=None, usage_metadata=None, text=output().model_dump_json())
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kwargs: response))
+    question = generate_concept_question(
+        spec(), GenerationSettings(api_key=None), "sha256:" + "b" * 64, client=client
+    )
+    assert question.choices == output().choices
+    response.text = '{"stem":"incomplete"}'
+    with pytest.raises(ValidationError):
+        generate_concept_question(
+            spec(), GenerationSettings(api_key=None), "sha256:" + "b" * 64, client=client
+        )
 
 
 @pytest.mark.parametrize("choices", [["A", "a", "B", "C"], ["A", "B", "C", " A "]])
@@ -155,3 +171,65 @@ def test_generation_does_not_relabel_saved_v1_output_as_current_prompt(tmp_path,
     message = " ".join(plain.replace("│", " ").split())
     assert "choose a new output directory" in message, result.output
     assert saved.read_bytes() == original
+
+
+@pytest.mark.parametrize("feedback", [None, {"review": {"notes": "Correct the mistaken premise"}}])
+def test_structural_reauthoring_is_bounded_and_keeps_both_raw_outputs(tmp_path, feedback):
+    calls = []
+    invalid = {**output().model_dump(), "stem": "Compute the value of $x + 2$ when x is three."}
+
+    def respond(**kw):
+        calls.append(kw)
+        value = invalid if len(calls) == 1 else output().model_dump()
+        return SimpleNamespace(parsed=value, usage_metadata=None, text=json.dumps(value))
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=respond))
+    raw = tmp_path / "question.json"
+    question = generate_concept_question(
+        spec(),
+        GenerationSettings(api_key=None),
+        "sha256:" + "b" * 64,
+        client=client,
+        raw_path=raw,
+        revision_feedback=feedback,
+    )
+    assert len(calls) == 2 and question.stem == output().stem
+    if feedback is not None:
+        assert all(json.dumps(feedback) in call["contents"] for call in calls)
+    assert json.loads(raw.read_text()) == invalid
+    assert json.loads(raw.with_suffix(".retry.json").read_text()) == output().model_dump()
+    calls.clear()
+    client.models.generate_content = lambda **kw: (
+        calls.append(kw)
+        or SimpleNamespace(parsed=invalid, usage_metadata=None, text=json.dumps(invalid))
+    )
+    with pytest.raises(ValueError, match="structural checks"):
+        generate_concept_question(
+            spec(), GenerationSettings(api_key=None), "sha256:" + "b" * 64, client=client
+        )
+    assert len(calls) == 2
+
+
+def test_numeric_data_in_stem_is_not_mistaken_for_a_verbatim_answer_leak():
+    numeric = ConceptProviderQuestion(
+        stem=r"Two options yield \(\$60\) and \(\$40\). What is the larger forgone value?",
+        choices=[r"\(\$60\)", r"\(\$40\)", r"\(\$20\)", r"\(\$100\)"],
+        correct_choice_index=0,
+        explanation="The highest-valued forgone option determines this cost.",
+    )
+    assert "verbatim answer in stem" not in quality_flags(numeric)
+    leaked = ConceptProviderQuestion(
+        stem=(
+            "The correct definition is a sustained rise in the general price level. "
+            "What is inflation?"
+        ),
+        choices=[
+            "a sustained rise in the general price level",
+            "a single expensive item",
+            "a fall in employment",
+            "unchanged purchasing power",
+        ],
+        correct_choice_index=0,
+        explanation="The definition describes broad price changes.",
+    )
+    assert "verbatim answer in stem" in quality_flags(leaked)

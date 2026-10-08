@@ -471,5 +471,87 @@ uv run bookmatch-question-generation concept ai-review-status \
 ## 문항의 Markdown·수식 표시
 
 개념 문항의 텍스트 필드는 가벼운 Markdown과 LaTeX를 사용합니다. JSON 구조와 정답·개념 계약은 유지합니다.
-생성 프롬프트는 `concept-question-generation-prompt-v2`이며 v1 산출물도 읽을 수 있습니다.
+현재 생성 프롬프트는 `concept-question-generation-prompt-v3`이며 이전 v1/v2 산출물도 읽을 수 있습니다.
 표기 규칙과 생성 후 실제 렌더링 검사 명령은 [문제 본문 형식](docs/question-content-format.md)을 참고하세요.
+## 분야 확장 작업에서 중단 후 문제 생성 이어가기
+
+```sh
+uv run bookmatch-question-generation concept generate-batch \
+  --blueprint /absolute/path/to/blueprint.json \
+  --output-dir /absolute/path/to/new-question-run --max-new 2
+```
+
+한 번에 최대 두 문항을 생성하는 서버 작업에 사용하는 명령이다. 명령 옵션은 1~3개를
+허용한다. 문항마다 구조·콘텐츠 형식·개념 설계와의 연결을 검증한 뒤 원자적으로 저장한다.
+중간 호출 실패 후에는 같은 입력·모델·언어·프롬프트·실행 설정의 저장 문항부터 이어간다.
+입력이나 구현이 바뀌면 새 출력 디렉터리를 사용해야 한다. API 키는 실행 기록에 넣지 않는다.
+
+현재 프롬프트는 `concept-question-generation-prompt-v3`이다. 한국어로 작성된 학습 목표를
+받아도 v5 계약에 맞는 영어 문항을 생성하며 이전 v1/v2 문항은 그대로 읽을 수 있다.
+SDK가 `parsed`를 채우지 않는 JSON 응답도 동일한 Pydantic 계약으로 검증한다.
+영어 원문과 한국어 표시용 번역은 구분한다.
+
+완료 시 `human-review/`에 검토용 문서와 **판정이 비어 있는** 검토표를 만든다.
+기존 사람 검토 파일은 덮어쓰지 않는다. `CANDIDATES_READY`와 구조 검사 통과는 정답의
+정확성·측정 타당성·AI 내용 검토 또는 사람 승인에 해당하지 않는다. 이 명령은 활성 문항
+은행이나 진단 설정을 변경하지 않는다. 다음 단계는 별도의 내용 검토와 공개 조건 확인이다.
+
+숫자만 포함한 균형 잡힌 `$...$` 수식은 원본을 보존하면서 `\(...\)`로 정리하는
+`concept-question-generation-config-v2`를 사용한다. 통화·변수·혼합 또는 닫히지 않은
+표기는 추측해서 고치지 않는다. 생성 구현이 바뀌면 새 출력 묶음을 만들고 이전 후보는
+보존하며, 서버 진행 수는 새 묶음 기준으로 갱신된다.
+
+
+## 확장 분야의 자동 AI 내용 검토
+
+`automatic_review.review_batch`와 Backend `topic-question-review.py`가 생성된 정확한
+문항 버전을 두 개씩 검토한다. 모델은 학습 목표·문항·정답·해설을 받아 별도로 풀고
+판정하며, 개념 초안과 선수관계도 따로 검토한다. 책 본문·목차·계정·사용자 응답은 보내지 않는다.
+검토 캐시는 후보·설계·초안·모델·프롬프트·구현 해시와 연결한다. 불일치는 재사용하지 않는다.
+`ai-question-review-v1` 판정은 `humanReview`와 구분한다. 같은 모델의 별도 검토 호출은
+사람 평가나 실험적 측정 타당성 검증을 대신하지 않는다.
+
+모든 후보가 기준을 통과하면 `APPROVED`, 보완 판정이 하나라도 있으면 `REVIEW_BLOCKED`다.
+이 라이브러리는 진단을 직접 활성화하지 않는다. 실제 화면의 수식 렌더링 검사와 ML 지원
+확인 후 Backend가 현재 자료 버전의 문항 은행과 책 연결을 함께 게시한다.
+
+생성 시 균형 잡힌 숫자 수식 구분자를 정리하고, 문장 안의 한 줄 display 수식은
+inline 구분자로 바꾸되 공식 문자는 유지한다. 원래 모델 출력은 보존한다. 잘못된 JSON·
+형식 출력은 구체적인 검사 실패를 알려 한 번만 재작성하며 계속 실패하면 멈춘다.
+수치가 문제에 주어진 것만으로 정답 유출로 판정하지 않으며, 계산/추론의 정확성은 별도
+내용 검토에서 판단한다. 이미 받아들인 후보를 수정해 과거 승인과 연결하지 않는다.
+
+
+`revision_batch.revise_batch`는 첫 검토의 미승인 문항이 1~2개이고 선수관계가 통과한
+경우에만 한 차례 보완한다. 통과 문항은 바이트와 생성 ID를 유지하고, 보완 문항은
+실제 검토 의견으로 새로 생성한다. 새 묶음은 여전히 `contentReview=pending`이며
+별도의 전체 재검토가 필요하다. 원래 생성·검토 파일은 보존한다. 중단 후 재실행은
+같은 입력과 구현의 저장된 보완 문항을 재사용하며, 이미 보완한 묶음에 두 번째 자동
+보완을 적용하지 않는다. 이 정책의 모델 정확성이나 측정 타당성은 별도 평가 대상이다.
+
+### Korean display translations
+
+`question_generation.translation.translate_question` produces separately stored Korean prompt,
+passage and choices from immutable English display content. Math and numeric literals are protected
+with exact placeholders; per-field preservation, choice count, duplicate choices and content format are
+checked. A separate Gemini call checks semantic equivalence, numbered-choice order and absence of
+added hints. Neither answer keys, explanations nor user data are sent. Original content, labels,
+correct-choice indices and generated IDs stay intact.
+
+Exact source/model/implementation cache identity avoids repeated calls. Rejected translations are
+not published. Backend owns the durable queue, lease, database publication and snapshot matching;
+its adapter also runs the actual Frontend renderer before publication. The same model performs
+translation and review in separate calls, not human review or independent-model consensus.
+
+A failed format/meaning check permits one fresh correction using the rejected draft and actual
+failure feedback, followed by the same complete validation and a new semantic review. The first
+draft/review are preserved in separate files. A second failure stays unpublished; retrying the same
+cache never forces approval. Provider/transport errors remain bounded by the SDK retry policy.
+Mathematical blocks may move within a sentence for Korean grammar, while each protected block must
+remain in the same field exactly once. Review checks that conditions/relationships remain equivalent.
+Intentionally false choices are preserved as written; translation must not correct their content.
+Spelled-out source counts can use digits, with matching values and a per-field occurrence budget.
+Original numeric/TeX literals must remain unchanged. Review checks negation and relationships;
+for example, `nonzero` may appear as `0이 아닌` but must not become `0`.
+The reviewer uses low thinking and must identify an actual language difference rather than reject
+a false statement that was already false in the original distractor.
