@@ -108,9 +108,26 @@ def canonical_generated_math(text: str) -> str:
     for opening, closing in zip(tokens[::2], tokens[1::2], strict=True):
         expression = text[opening.end() : closing.start()]
         value = expression.strip()
+        # Keep prose between two currency amounts out of math. LaTeX text/font
+        # arguments and commands are explicit math syntax; bare words are not.
+        symbolic = re.sub(
+            r"\\(?:text|textrm|texttt|textsf|textnormal|textbf|textit|mathrm|mathbf|mathit|mathsf|mathtt|operatorname)\{[^{}]*\}",
+            " x ",
+            value,
+        )
+        symbolic = re.sub(r"\\[A-Za-z]+", " x ", symbolic)
+        words = re.findall(r"[A-Za-z]+", symbolic)
+        valid_symbols = all(
+            len(word) == 1
+            or (word.isupper() and len(word) <= 4)
+            or word in {"sin", "cos", "tan", "log", "ln", "exp", "min", "max", "det", "mod"}
+            for word in words
+        )
         if (
             opening.group() != closing.group()
             or not value
+            or not valid_symbols
+            or (closing.end() < len(text) and text[closing.end()].isdigit())
             or value[-1] in "+-*/=<>^_"
             or (opening.group() == "$" and "\n" in expression)
             or not (

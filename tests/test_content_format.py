@@ -18,7 +18,21 @@ def test_generated_symbolic_math_keeps_expressions_and_rejects_currency_ambiguit
         canonical_generated_math("Subtract $x-y$; negate $-x$.")
         == r"Subtract \(x-y\); negate \(-x\)."
     )
-    for ambiguous in ["Costs $5 and $10", "Costs $5", "$x$$", "$x\n+2$", "Pay $5-$10"]:
+    assert (
+        canonical_generated_math(r"Use $x + \text{fixed cost}$.")
+        == r"Use \(x + \text{fixed cost}\)."
+    )
+    for ambiguous in [
+        "Costs $5 and $10",
+        "Costs $5",
+        "$x$$",
+        "$x\n+2$",
+        "Pay $5-$10",
+        "The price is $5 (USD) or $10.",
+        "Costs $5 each, versus $10.",
+        "Costs $5 (USD) $10",
+        "Costs $5 (USD) or $ten.",
+    ]:
         assert canonical_generated_math(ambiguous) == ambiguous
 
 
