@@ -95,6 +95,41 @@ def content_format_flags(text: str) -> list[str]:
     return sorted(set(flags))
 
 
+def canonical_generated_math(text: str) -> str:
+    """Convert unambiguous balanced provider dollar math without changing expressions.
+
+    Currency and incomplete/mixed delimiters stay rejected. Existing source documents
+    are never rewritten; this applies only before a newly generated question is saved.
+    """
+    tokens = list(re.finditer(r"(?<!\\)\${1,2}", text))
+    if not tokens or len(tokens) % 2:
+        return text
+    parts, position = [], 0
+    for opening, closing in zip(tokens[::2], tokens[1::2], strict=True):
+        expression = text[opening.end() : closing.start()]
+        value = expression.strip()
+        if (
+            opening.group() != closing.group()
+            or not value
+            or value[-1] in "+-*/=<>^_"
+            or (opening.group() == "$" and "\n" in expression)
+            or not (
+                re.fullmatch(r"[A-Za-z]{1,4}|[0-9.,\s]+", value)
+                or re.search(r"[=^_{}\\<>+*/()\-]", value)
+            )
+        ):
+            return text
+        parts.append(text[position : opening.start()])
+        parts.append(
+            r"\(" + expression + r"\)"
+            if opening.group() == "$"
+            else "\n" + r"\[" + "\n" + expression + "\n" + r"\]" + "\n"
+        )
+        position = closing.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
 def canonical_math_layout(text: str) -> str:
     """Use inline delimiters for a one-line expression embedded in prose.
 

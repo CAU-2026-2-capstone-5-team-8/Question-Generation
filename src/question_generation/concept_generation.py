@@ -18,6 +18,7 @@ from question_generation.config import GenerationSettings
 from question_generation.content_format import (
     CONTENT_FORMAT,
     FORMAT_INSTRUCTION,
+    canonical_generated_math,
     canonical_math_layout,
     canonical_numeric_math,
     content_format_flags,
@@ -115,7 +116,7 @@ def assemble_question(spec, output, *, model, language, artifact_hash, usage):
         generation_model=model,
         output_language=language,
         prompt_version=PROMPT_VERSION,
-        generation_config_version="concept-question-generation-config-v2",
+        generation_config_version="concept-question-generation-config-v3",
     )
     data["generated_question_id"] = "gq_" + content_hash(data).split(":")[1][:32]
     data["usage"] = usage
@@ -189,13 +190,17 @@ def generate_concept_question(
                 output = ConceptProviderQuestion.model_validate(
                     {
                         **output.model_dump(),
-                        "stem": canonical_math_layout(canonical_numeric_math(output.stem)),
+                        "stem": canonical_math_layout(
+                            canonical_generated_math(canonical_numeric_math(output.stem))
+                        ),
                         "choices": [
-                            canonical_math_layout(canonical_numeric_math(choice))
+                            canonical_math_layout(
+                                canonical_generated_math(canonical_numeric_math(choice))
+                            )
                             for choice in output.choices
                         ],
                         "explanation": canonical_math_layout(
-                            canonical_numeric_math(output.explanation)
+                            canonical_generated_math(canonical_numeric_math(output.explanation))
                         ),
                     }
                 )
