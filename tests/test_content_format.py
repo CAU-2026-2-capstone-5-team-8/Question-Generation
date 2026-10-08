@@ -5,7 +5,35 @@ from types import SimpleNamespace
 import pytest
 
 from question_generation.concept_generation import render_concept_prompt
-from question_generation.content_format import content_format_flags
+from question_generation.content_format import canonical_generated_math, content_format_flags
+
+
+def test_generated_symbolic_math_keeps_expressions_and_rejects_currency_ambiguity():
+    raw = r"Bundle $A$ costs $p^A = (2, 1)$; compare $p^A \cdot x^B = 9$."
+    normalized = canonical_generated_math(raw)
+    assert normalized == r"Bundle \(A\) costs \(p^A = (2, 1)\); compare \(p^A \cdot x^B = 9\)."
+    assert content_format_flags(normalized) == []
+    assert canonical_generated_math(normalized) == normalized
+    assert (
+        canonical_generated_math("Subtract $x-y$; negate $-x$.")
+        == r"Subtract \(x-y\); negate \(-x\)."
+    )
+    assert (
+        canonical_generated_math(r"Use $x + \text{fixed cost}$.")
+        == r"Use \(x + \text{fixed cost}\)."
+    )
+    for ambiguous in [
+        "Costs $5 and $10",
+        "Costs $5",
+        "$x$$",
+        "$x\n+2$",
+        "Pay $5-$10",
+        "The price is $5 (USD) or $10.",
+        "Costs $5 each, versus $10.",
+        "Costs $5 (USD) $10",
+        "Costs $5 (USD) or $ten.",
+    ]:
+        assert canonical_generated_math(ambiguous) == ambiguous
 
 
 @pytest.mark.parametrize(

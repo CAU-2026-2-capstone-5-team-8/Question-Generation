@@ -176,7 +176,7 @@ def test_generation_does_not_relabel_saved_v1_output_as_current_prompt(tmp_path,
 @pytest.mark.parametrize("feedback", [None, {"review": {"notes": "Correct the mistaken premise"}}])
 def test_structural_reauthoring_is_bounded_and_keeps_both_raw_outputs(tmp_path, feedback):
     calls = []
-    invalid = {**output().model_dump(), "stem": "Compute the value of $x + 2$ when x is three."}
+    invalid = {**output().model_dump(), "stem": "Compute the value of $x + 2 when x is three."}
 
     def respond(**kw):
         calls.append(kw)
